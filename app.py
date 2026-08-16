@@ -17,6 +17,7 @@ en la consola, por ejemplo: http://192.168.1.5:5000
 import io
 import json
 import os
+import re
 import smtplib
 from datetime import datetime
 from email.mime.application import MIMEApplication
@@ -47,15 +48,16 @@ load_dotenv()
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONTACTS_PATH = os.path.join(APP_DIR, "contacts.json")
 
-# Estructura fija del informe: la antena (sin nivel de señal) + siempre 4 TV
-# (cada una con su nivel de señal). "key" se usa para armar los nombres de
-# los campos del formulario (foto_<key>, señal_<key>).
+# Estructura fija del informe: la antena + siempre 4 TV (cada una con su
+# nivel de señal). Solo la antena y la TV 1 son obligatorias; TV 2 a TV 4
+# quedan opcionales. "key" se usa para armar los nombres de los campos del
+# formulario (foto_<key>, señal_<key>).
 FOTO_SLOTS = [
     {"key": "antena", "titulo": "Instalación antena fuera del domicilio", "requiere_senal": False, "obligatoria": True},
     {"key": "tv1", "titulo": "Instalación TV 1", "requiere_senal": True, "obligatoria": True},
-    {"key": "tv2", "titulo": "Instalación TV 2", "requiere_senal": False, "obligatoria": False},
-    {"key": "tv3", "titulo": "Instalación TV 3", "requiere_senal": False, "obligatoria": False},
-    {"key": "tv4", "titulo": "Instalación TV 4", "requiere_senal": False, "obligatoria": False},
+    {"key": "tv2", "titulo": "Instalación TV 2", "requiere_senal": True, "obligatoria": False},
+    {"key": "tv3", "titulo": "Instalación TV 3", "requiere_senal": True, "obligatoria": False},
+    {"key": "tv4", "titulo": "Instalación TV 4", "requiere_senal": True, "obligatoria": False},
 ]
 
 app = Flask(__name__)
@@ -66,6 +68,37 @@ app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB por envío
 def cargar_contactos():
     with open(CONTACTS_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _limpiar_rut(rut):
+    """Deja solo dígitos y la letra K/k (sin puntos, guión ni espacios)."""
+    return re.sub(r"[^0-9kK]", "", rut or "").upper()
+
+
+def _calcular_dv_rut(cuerpo):
+    """Calcula el dígito verificador de un RUT chileno (algoritmo módulo 11)."""
+    suma = 0
+    multiplo = 2
+    for digito in reversed(cuerpo):
+        suma += int(digito) * multiplo
+        multiplo = multiplo + 1 if multiplo < 7 else 2
+    resto = 11 - (suma % 11)
+    if resto == 11:
+        return "0"
+    if resto == 10:
+        return "K"
+    return str(resto)
+
+
+def rut_valido(rut):
+    """Valida formato y dígito verificador de un RUT chileno."""
+    limpio = _limpiar_rut(rut)
+    if len(limpio) < 2:
+        return False
+    cuerpo, dv = limpio[:-1], limpio[-1]
+    if not cuerpo.isdigit():
+        return False
+    return _calcular_dv_rut(cuerpo) == dv
 
 
 @app.route("/.well-known/assetlinks.json", methods=["GET"])
@@ -259,6 +292,13 @@ def enviar():
 
     if not rut_cliente:
         flash("Tenés que completar el RUT del cliente.", "error")
+        return redirect(url_for("index"))
+
+    if not rut_valido(rut_cliente):
+        flash(
+            "El RUT del cliente no es válido. Revisá que esté bien escrito, incluyendo el dígito verificador (ej: 12.345.678-5).",
+            "error",
+        )
         return redirect(url_for("index"))
 
     fotos = []
