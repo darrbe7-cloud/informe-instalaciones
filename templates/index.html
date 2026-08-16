@@ -13,7 +13,7 @@
 <body>
   <header class="app-header">
     <h1>Informe de Instalación</h1>
-    <p class="subtitle">Completá los datos del cliente, sacá las 5 fotos del informe y enviá el PDF por correo</p>
+    <p class="subtitle">Completá los datos del cliente, sacá las fotos del informe y enviá el PDF por correo</p>
   </header>
 
   <main>
@@ -52,11 +52,11 @@
 
       <section class="card">
         <h2>Fotos del informe</h2>
-        <p class="hint">Las 5 fotos son obligatorias: la antena y las 4 instalaciones de TV. En cada foto de TV indicá el nivel de señal medido.</p>
+        <p class="hint">La antena y la TV 1 son obligatorias. Las fotos de TV 2 a TV 4 son opcionales, según cuántas TV tenga la instalación. En cada foto de TV podés indicar el nivel de señal medido.</p>
 
         {% for slot in foto_slots %}
         <div class="foto-slot" id="slot-{{ slot.key }}">
-          <label class="foto-label">{{ loop.index }}. {{ slot.titulo }} (obligatoria)</label>
+          <label class="foto-label">{{ loop.index }}. {{ slot.titulo }} {% if slot.obligatoria %}(obligatoria){% else %}(opcional){% endif %}</label>
 
           <div class="foto-input-row">
             <label class="foto-btn" for="foto_{{ slot.key }}">
@@ -71,7 +71,7 @@
               name="foto_{{ slot.key }}"
               class="foto-file-input"
               onchange="previewFoto('{{ slot.key }}')"
-              data-obligatoria="true"
+              data-obligatoria="{{ 'true' if slot.obligatoria else 'false' }}"
               data-titulo="{{ slot.titulo }}"
             />
           </div>
@@ -80,9 +80,9 @@
           <input
             type="text"
             name="senal_{{ slot.key }}"
-            placeholder="Nivel de señal (ej: 85% o -65 dBm)"
+            placeholder="Nivel de señal (ej: 85% o -65 dBm){% if not slot.obligatoria %} - opcional{% endif %}"
             class="foto-titulo-input"
-            required
+            {% if slot.obligatoria %}required{% endif %}
           />
           {% endif %}
         </div>
