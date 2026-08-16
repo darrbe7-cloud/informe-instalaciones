@@ -97,6 +97,34 @@ function capturarFoto() {
   );
 }
 
+// --- Validación de RUT chileno --------------------------------------------
+
+function limpiarRut(rut) {
+  return (rut || "").replace(/[^0-9kK]/g, "").toUpperCase();
+}
+
+function calcularDvRut(cuerpo) {
+  let suma = 0;
+  let multiplo = 2;
+  for (let i = cuerpo.length - 1; i >= 0; i--) {
+    suma += parseInt(cuerpo[i], 10) * multiplo;
+    multiplo = multiplo < 7 ? multiplo + 1 : 2;
+  }
+  const resto = 11 - (suma % 11);
+  if (resto === 11) return "0";
+  if (resto === 10) return "K";
+  return String(resto);
+}
+
+function rutValido(rut) {
+  const limpio = limpiarRut(rut);
+  if (limpio.length < 2) return false;
+  const cuerpo = limpio.slice(0, -1);
+  const dv = limpio.slice(-1);
+  if (!/^\d+$/.test(cuerpo)) return false;
+  return calcularDvRut(cuerpo) === dv;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("form-informe");
   const boton = document.getElementById("btn-enviar");
@@ -106,7 +134,40 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnCancelar) btnCancelar.addEventListener("click", cerrarCamara);
   if (btnCapturar) btnCapturar.addEventListener("click", capturarFoto);
 
+  const rutInput = document.getElementById("rut_cliente");
+  const rutError = document.getElementById("rut-error");
+
+  function validarRutEnPantalla() {
+    if (!rutInput) return true;
+    const valor = rutInput.value.trim();
+    if (!valor) {
+      rutInput.classList.remove("input-error");
+      if (rutError) rutError.style.display = "none";
+      return false; // vacío también es inválido, pero sin mostrar el error hasta que escriba algo
+    }
+    const esValido = rutValido(valor);
+    rutInput.classList.toggle("input-error", !esValido);
+    if (rutError) rutError.style.display = esValido ? "none" : "block";
+    return esValido;
+  }
+
+  if (rutInput) {
+    rutInput.addEventListener("blur", validarRutEnPantalla);
+    rutInput.addEventListener("input", () => {
+      // mientras escribe, si ya estaba marcado como error, revalida en vivo
+      if (rutInput.classList.contains("input-error")) validarRutEnPantalla();
+    });
+  }
+
   form.addEventListener("submit", (event) => {
+    if (rutInput && !rutValido(rutInput.value)) {
+      event.preventDefault();
+      validarRutEnPantalla();
+      alert("El RUT del cliente no es válido. Revisalo (incluyendo el dígito verificador) antes de enviar.");
+      rutInput.focus();
+      return;
+    }
+
     // Los inputs de tipo archivo están ocultos (las fotos se cargan desde
     // la cámara en vivo, no eligiéndolos), así que la validación "required"
     // nativa del navegador no funciona bien sobre ellos. Se valida acá.
