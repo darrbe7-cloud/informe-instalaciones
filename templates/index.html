@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+  <title>Informe de Instalación</title>
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}" />
+  <link rel="icon" href="{{ url_for('static', filename='icon-192.png') }}" />
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}" />
+  <meta name="theme-color" content="#1f6feb" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Informe de Instalación</h1>
+    <p class="subtitle">Completá los datos del cliente, sacá las 5 fotos del informe y enviá el PDF por correo</p>
+  </header>
+
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for categoria, mensaje in messages %}
+            <div class="flash flash-{{ categoria }}">{{ mensaje }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('enviar') }}" method="POST" enctype="multipart/form-data" id="form-informe">
+
+      <section class="card">
+        <h2>Datos del cliente</h2>
+        <label for="tecnico">Técnico</label>
+        <input type="text" id="tecnico" name="tecnico" placeholder="Tu nombre" />
+
+        <label for="cliente">Nombre del cliente</label>
+        <input type="text" id="cliente" name="cliente" placeholder="Nombre y apellido del cliente" />
+
+        <label for="rut_cliente">RUT del cliente (obligatorio)</label>
+        <input type="text" id="rut_cliente" name="rut_cliente" placeholder="Ej: 12.345.678-9" inputmode="text" required />
+
+        <label for="direccion">Dirección</label>
+        <input type="text" id="direccion" name="direccion" placeholder="Calle, número, depto/casa" />
+
+        <label for="comuna">Comuna</label>
+        <input type="text" id="comuna" name="comuna" placeholder="Comuna" />
+
+        <label for="region">Región</label>
+        <input type="text" id="region" name="region" placeholder="Región" />
+      </section>
+
+      <section class="card">
+        <h2>Fotos del informe</h2>
+        <p class="hint">Las 5 fotos son obligatorias: la antena y las 4 instalaciones de TV. En cada foto de TV indicá el nivel de señal medido.</p>
+
+        {% for slot in foto_slots %}
+        <div class="foto-slot" id="slot-{{ slot.key }}">
+          <label class="foto-label">{{ loop.index }}. {{ slot.titulo }} (obligatoria)</label>
+
+          <div class="foto-input-row">
+            <label class="foto-btn" for="foto_{{ slot.key }}">
+              <span class="foto-preview" id="preview-{{ slot.key }}">📷</span>
+              <span class="foto-btn-text">Tomar / elegir foto</span>
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              id="foto_{{ slot.key }}"
+              name="foto_{{ slot.key }}"
+              class="foto-file-input"
+              onchange="previewFoto('{{ slot.key }}')"
+              data-obligatoria="true"
+              data-titulo="{{ slot.titulo }}"
+            />
+          </div>
+
+          {% if slot.requiere_senal %}
+          <input
+            type="text"
+            name="senal_{{ slot.key }}"
+            placeholder="Nivel de señal (ej: 85% o -65 dBm)"
+            class="foto-titulo-input"
+            required
+          />
+          {% endif %}
+        </div>
+        {% endfor %}
+      </section>
+
+      <section class="card">
+        <h2>Observación final</h2>
+        <textarea name="observacion" rows="4" placeholder="Escribí alguna observación adicional para el informe (opcional)"></textarea>
+      </section>
+
+      <section class="card">
+        <h2>Enviar informe a</h2>
+        {% if destinatarios %}
+          <div class="destinatarios-lista">
+            {% for d in destinatarios %}
+              <label class="checkbox-row">
+                <input type="checkbox" name="destinatarios" value="{{ d.correo }}" />
+                {{ d.nombre }} <span class="correo-chico">({{ d.correo }})</span>
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="hint">No hay destinatarios guardados. Editá <code>contacts.json</code> para agregar contactos frecuentes.</p>
+        {% endif %}
+
+        <label for="correo_extra">Otros correos (separados por coma)</label>
+        <input type="text" id="correo_extra" name="correo_extra" placeholder="ejemplo1@correo.com, ejemplo2@correo.com" />
+      </section>
+
+      <button type="submit" class="btn-enviar" id="btn-enviar">Generar PDF y enviar</button>
+    </form>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
