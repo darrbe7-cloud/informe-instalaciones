@@ -52,25 +52,23 @@
 
       <section class="card">
         <h2>Fotos del informe</h2>
-        <p class="hint">La antena y la TV 1 son obligatorias. Las fotos de TV 2 a TV 4 son opcionales, según cuántas TV tenga la instalación. En cada foto de TV podés indicar el nivel de señal medido.</p>
+        <p class="hint">La antena y la TV 1 son obligatorias. Las fotos de TV 2 a TV 4 son opcionales, según cuántas TV tenga la instalación. En cada foto de TV podés indicar el nivel de señal medido. Las fotos se toman con la cámara en el momento, no se pueden elegir de la galería.</p>
 
         {% for slot in foto_slots %}
         <div class="foto-slot" id="slot-{{ slot.key }}">
           <label class="foto-label">{{ loop.index }}. {{ slot.titulo }} {% if slot.obligatoria %}(obligatoria){% else %}(opcional){% endif %}</label>
 
           <div class="foto-input-row">
-            <label class="foto-btn" for="foto_{{ slot.key }}">
+            <button type="button" class="foto-btn" onclick="abrirCamara('{{ slot.key }}', '{{ slot.titulo }}')">
               <span class="foto-preview" id="preview-{{ slot.key }}">📷</span>
-              <span class="foto-btn-text">Tomar / elegir foto</span>
-            </label>
+              <span class="foto-btn-text">Tomar foto con la cámara</span>
+            </button>
             <input
               type="file"
-              accept="image/*"
-              capture="environment"
               id="foto_{{ slot.key }}"
               name="foto_{{ slot.key }}"
               class="foto-file-input"
-              onchange="previewFoto('{{ slot.key }}')"
+              style="display:none"
               data-obligatoria="{{ 'true' if slot.obligatoria else 'false' }}"
               data-titulo="{{ slot.titulo }}"
             />
@@ -116,6 +114,16 @@
       <button type="submit" class="btn-enviar" id="btn-enviar">Generar PDF y enviar</button>
     </form>
   </main>
+
+  <div id="camera-modal" class="camera-modal">
+    <div id="camera-titulo" class="camera-header"></div>
+    <video id="camera-video" autoplay playsinline></video>
+    <canvas id="camera-canvas" style="display:none"></canvas>
+    <div class="camera-controls">
+      <button type="button" id="camera-cancel" class="camera-btn camera-btn-secondary">Cancelar</button>
+      <button type="button" id="camera-capture" class="camera-btn camera-btn-primary">📷 Capturar</button>
+    </div>
+  </div>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
