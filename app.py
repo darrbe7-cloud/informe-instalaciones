@@ -35,6 +35,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     Image as RLImage,
+    KeepTogether,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -143,7 +144,25 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
     """Arma el PDF del informe en memoria y devuelve los bytes.
 
     `fotos` es una lista de tuplas (titulo, foto_buffer, tam_original, nivel_senal_o_None).
+
+    El diseño busca verse "ejecutivo": encabezado con banda de color, una
+    ficha de datos del cliente en formato tabla prolija, cada foto dentro de
+    una tarjeta con su título arriba y el nivel de señal en una franja
+    destacada debajo de la imagen, y las observaciones finales dentro de un
+    recuadro con borde de color (estilo "callout").
     """
+    ANCHO_CONTENIDO = 18 * cm  # A4 (21cm) menos 1.5cm de margen a cada lado
+
+    COLOR_PRIMARIO = colors.HexColor("#1f6feb")
+    COLOR_PRIMARIO_OSCURO = colors.HexColor("#17539c")
+    COLOR_FONDO_ALTERNO = colors.HexColor("#f7f9fc")
+    COLOR_BORDE = colors.HexColor("#d7dbe0")
+    COLOR_TEXTO = colors.HexColor("#1a1a1a")
+    COLOR_TEXTO_MUTED = colors.HexColor("#5a6472")
+    COLOR_SENAL_FONDO = colors.HexColor("#e3f8e9")
+    COLOR_SENAL_TEXTO = colors.HexColor("#14632f")
+    COLOR_OBS_FONDO = colors.HexColor("#f5f9ff")
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -156,72 +175,113 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
 
     styles = getSampleStyleSheet()
     titulo_style = ParagraphStyle(
-        "TituloInforme",
-        parent=styles["Title"],
-        alignment=TA_CENTER,
-        fontSize=18,
-        spaceAfter=6,
+        "TituloInforme", parent=styles["Title"], alignment=TA_CENTER,
+        fontSize=17, leading=20, textColor=colors.white, spaceAfter=0,
     )
-    subtitulo_style = ParagraphStyle(
-        "Subtitulo",
-        parent=styles["Normal"],
-        alignment=TA_CENTER,
-        fontSize=10,
-        textColor=colors.grey,
-        spaceAfter=16,
+    subtitulo_header_style = ParagraphStyle(
+        "SubtituloHeader", parent=styles["Normal"], alignment=TA_CENTER,
+        fontSize=9.5, leading=12, textColor=colors.white,
+    )
+    fecha_style = ParagraphStyle(
+        "Fecha", parent=styles["Normal"], alignment=TA_CENTER,
+        fontSize=8.5, textColor=COLOR_TEXTO_MUTED, spaceBefore=8, spaceAfter=16,
+    )
+    ficha_header_style = ParagraphStyle(
+        "FichaHeader", parent=styles["Normal"], fontSize=10.5,
+        fontName="Helvetica-Bold", textColor=colors.white,
+    )
+    etiqueta_style = ParagraphStyle(
+        "Etiqueta", parent=styles["Normal"], fontSize=9.5,
+        fontName="Helvetica-Bold", textColor=COLOR_TEXTO_MUTED,
+    )
+    valor_style = ParagraphStyle(
+        "Valor", parent=styles["Normal"], fontSize=10, textColor=COLOR_TEXTO,
     )
     foto_titulo_style = ParagraphStyle(
-        "FotoTitulo",
-        parent=styles["Heading2"],
-        fontSize=13,
-        spaceBefore=10,
-        spaceAfter=8,
+        "FotoTitulo", parent=styles["Normal"], fontSize=11.5,
+        fontName="Helvetica-Bold", textColor=colors.white,
     )
-    observacion_titulo_style = ParagraphStyle(
-        "ObservacionTitulo",
-        parent=styles["Heading2"],
-        fontSize=13,
-        spaceBefore=16,
-        spaceAfter=8,
+    senal_style = ParagraphStyle(
+        "Senal", parent=styles["Normal"], fontSize=10.5, alignment=TA_CENTER,
+        fontName="Helvetica-Bold", textColor=COLOR_SENAL_TEXTO,
+    )
+    observacion_header_style = ParagraphStyle(
+        "ObservacionHeader", parent=styles["Normal"], fontSize=11.5,
+        fontName="Helvetica-Bold", textColor=COLOR_PRIMARIO, spaceAfter=5,
+    )
+    observacion_texto_style = ParagraphStyle(
+        "ObservacionTexto", parent=styles["Normal"], fontSize=10,
+        leading=14, textColor=COLOR_TEXTO,
     )
 
     elementos = []
 
-    elementos.append(Paragraph("Informe de Instalación", titulo_style))
-    fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-    elementos.append(Paragraph(f"Generado el {fecha_str}", subtitulo_style))
-
-    datos_generales = []
-    if tecnico:
-        datos_generales.append(["Técnico:", tecnico])
-    if cliente:
-        datos_generales.append(["Cliente:", cliente])
-    if rut_cliente:
-        datos_generales.append(["RUT cliente:", rut_cliente])
-    if direccion:
-        datos_generales.append(["Dirección:", direccion])
-    if comuna:
-        datos_generales.append(["Comuna:", comuna])
-    if region:
-        datos_generales.append(["Región:", region])
-
-    if datos_generales:
-        tabla = Table(datos_generales, colWidths=[4 * cm, 12 * cm])
-        tabla.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ]
-            )
+    # --- Encabezado con banda de color ---------------------------------
+    encabezado = Table(
+        [
+            [Paragraph("INFORME DE INSTALACIÓN", titulo_style)],
+            [Paragraph("Auditoría fotográfica de instalación", subtitulo_header_style)],
+        ],
+        colWidths=[ANCHO_CONTENIDO],
+    )
+    encabezado.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), COLOR_PRIMARIO),
+                ("TOPPADDING", (0, 0), (-1, 0), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
+                ("TOPPADDING", (0, 1), (-1, 1), 0),
+                ("BOTTOMPADDING", (0, 1), (-1, 1), 12),
+            ]
         )
-        elementos.append(tabla)
-        elementos.append(Spacer(1, 12))
+    )
+    elementos.append(encabezado)
 
-    max_ancho = 16 * cm
-    max_alto = 12 * cm
+    fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+    elementos.append(Paragraph(f"Generado el {fecha_str}", fecha_style))
+
+    # --- Ficha de datos del cliente, en formato tabla prolijo -----------
+    filas_cliente = []
+
+    def _agregar_fila(etiqueta, valor):
+        if valor:
+            filas_cliente.append([Paragraph(etiqueta, etiqueta_style), Paragraph(valor, valor_style)])
+
+    _agregar_fila("Técnico", tecnico)
+    _agregar_fila("Cliente", cliente)
+    _agregar_fila("RUT cliente", rut_cliente)
+    _agregar_fila("Dirección", direccion)
+    _agregar_fila("Comuna", comuna)
+    _agregar_fila("Región", region)
+
+    if filas_cliente:
+        filas = [[Paragraph("DATOS DEL CLIENTE", ficha_header_style), ""]] + filas_cliente
+        ficha = Table(filas, colWidths=[4.5 * cm, ANCHO_CONTENIDO - 4.5 * cm])
+        estilo_ficha = [
+            ("SPAN", (0, 0), (-1, 0)),
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARIO_OSCURO),
+            ("TOPPADDING", (0, 0), (-1, 0), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 1), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+            ("LINEBELOW", (0, 1), (-1, -2), 0.5, COLOR_BORDE),
+            ("BOX", (0, 0), (-1, -1), 0.75, COLOR_BORDE),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]
+        for idx in range(1, len(filas)):
+            if idx % 2 == 0:
+                estilo_ficha.append(("BACKGROUND", (0, idx), (-1, idx), COLOR_FONDO_ALTERNO))
+        ficha.setStyle(TableStyle(estilo_ficha))
+        elementos.append(ficha)
+        elementos.append(Spacer(1, 20))
+
+    # --- Fotos: cada una en su propia tarjeta ---------------------------
+    # Se limita el alto para que, en general, entren 2 tarjetas por página
+    # (más compacto y prolijo que una foto gigante por hoja).
+    max_ancho = 16.4 * cm
+    max_alto = 8.6 * cm
 
     for i, (titulo_foto, foto_buffer, tam_original, nivel_senal) in enumerate(fotos, start=1):
         ancho_original, alto_original = tam_original
@@ -229,17 +289,53 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
         ancho_final = ancho_original * ratio
         alto_final = alto_original * ratio
 
-        elementos.append(Paragraph(f"{i}. {titulo_foto}", foto_titulo_style))
-        elementos.append(RLImage(foto_buffer, width=ancho_final, height=alto_final))
-        if nivel_senal:
-            elementos.append(Spacer(1, 4))
-            elementos.append(Paragraph(f"<b>Nivel de señal:</b> {nivel_senal}", styles["Normal"]))
-        elementos.append(Spacer(1, 14))
+        imagen = RLImage(foto_buffer, width=ancho_final, height=alto_final)
+        imagen.hAlign = "CENTER"
 
+        filas_foto = [[Paragraph(f"{i}.  {titulo_foto}", foto_titulo_style)], [imagen]]
+        estilo_foto = [
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARIO),
+            ("TOPPADDING", (0, 0), (-1, 0), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("LEFTPADDING", (0, 0), (-1, 0), 10),
+            ("TOPPADDING", (0, 1), (-1, 1), 8),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 3 if nivel_senal else 8),
+            ("BOX", (0, 0), (-1, -1), 0.75, COLOR_BORDE),
+        ]
+
+        if nivel_senal:
+            filas_foto.append([Paragraph(f"NIVEL DE SEÑAL MEDIDO&nbsp;&nbsp;·&nbsp;&nbsp;{nivel_senal}", senal_style)])
+            estilo_foto.append(("BACKGROUND", (0, 2), (-1, 2), COLOR_SENAL_FONDO))
+            estilo_foto.append(("TOPPADDING", (0, 2), (-1, 2), 6))
+            estilo_foto.append(("BOTTOMPADDING", (0, 2), (-1, 2), 6))
+            estilo_foto.append(("LINEABOVE", (0, 2), (-1, 2), 0.5, COLOR_BORDE))
+
+        tarjeta_foto = Table(filas_foto, colWidths=[ANCHO_CONTENIDO])
+        tarjeta_foto.setStyle(TableStyle(estilo_foto))
+
+        elementos.append(KeepTogether([tarjeta_foto, Spacer(1, 14)]))
+
+    # --- Observaciones dentro de un recuadro destacado -------------------
     if observacion:
-        elementos.append(Paragraph("Observaciones", observacion_titulo_style))
+        contenido_obs = [Paragraph("OBSERVACIONES", observacion_header_style)]
         for linea in observacion.splitlines() or [""]:
-            elementos.append(Paragraph(linea if linea.strip() else "&nbsp;", styles["Normal"]))
+            contenido_obs.append(Paragraph(linea if linea.strip() else "&nbsp;", observacion_texto_style))
+
+        caja_obs = Table([[contenido_obs]], colWidths=[ANCHO_CONTENIDO])
+        caja_obs.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), COLOR_OBS_FONDO),
+                    ("LINEBEFORE", (0, 0), (0, -1), 3, COLOR_PRIMARIO),
+                    ("BOX", (0, 0), (-1, -1), 0.75, COLOR_BORDE),
+                    ("TOPPADDING", (0, 0), (-1, -1), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+                ]
+            )
+        )
+        elementos.append(caja_obs)
 
     doc.build(elementos)
     buffer.seek(0)
