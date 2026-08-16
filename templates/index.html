@@ -13,7 +13,7 @@
 <body>
   <header class="app-header">
     <h1>Informe de Instalación</h1>
-    <p class="subtitle">Completá los datos del cliente, sacá las fotos del informe y enviá el PDF por correo</p>
+    <p class="subtitle">Completá los datos del cliente, sacá las 5 fotos del informe y enviá el PDF por correo</p>
   </header>
 
   <main>
@@ -44,16 +44,20 @@
         <label for="direccion">Dirección</label>
         <input type="text" id="direccion" name="direccion" placeholder="Calle, número, depto/casa" />
 
-        <label for="comuna">Comuna</label>
-        <input type="text" id="comuna" name="comuna" placeholder="Comuna" />
-
         <label for="region">Región</label>
-        <input type="text" id="region" name="region" placeholder="Región" />
+        <select id="region" name="region">
+          <option value="">Selecciona una región</option>
+        </select>
+
+        <label for="comuna">Comuna</label>
+        <select id="comuna" name="comuna" disabled>
+          <option value="">Selecciona primero una región</option>
+        </select>
       </section>
 
       <section class="card">
         <h2>Fotos del informe</h2>
-        <p class="hint">La antena y la TV 1 son obligatorias. Las fotos de TV 2 a TV 4 son opcionales, según cuántas TV tenga la instalación. En cada foto de TV podés indicar el nivel de señal medido. Las fotos se toman con la cámara en el momento, no se pueden elegir de la galería.</p>
+        <p class="hint">La antena y la TV 1 son obligatorias. Las fotos de TV 2 a TV 4 son opcionales, según cuántas TV tenga la instalación. En cada foto de TV podés indicar el nivel de señal medido.</p>
 
         {% for slot in foto_slots %}
         <div class="foto-slot" id="slot-{{ slot.key }}">
