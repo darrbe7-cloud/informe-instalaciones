@@ -53,9 +53,9 @@ CONTACTS_PATH = os.path.join(APP_DIR, "contacts.json")
 FOTO_SLOTS = [
     {"key": "antena", "titulo": "Instalación antena fuera del domicilio", "requiere_senal": False, "obligatoria": True},
     {"key": "tv1", "titulo": "Instalación TV 1", "requiere_senal": True, "obligatoria": True},
-    {"key": "tv2", "titulo": "Instalación TV 2", "requiere_senal": True, "obligatoria": True},
-    {"key": "tv3", "titulo": "Instalación TV 3", "requiere_senal": True, "obligatoria": True},
-    {"key": "tv4", "titulo": "Instalación TV 4", "requiere_senal": True, "obligatoria": True},
+    {"key": "tv2", "titulo": "Instalación TV 2", "requiere_senal": False, "obligatoria": False},
+    {"key": "tv3", "titulo": "Instalación TV 3", "requiere_senal": False, "obligatoria": False},
+    {"key": "tv4", "titulo": "Instalación TV 4", "requiere_senal": False, "obligatoria": False},
 ]
 
 app = Flask(__name__)
