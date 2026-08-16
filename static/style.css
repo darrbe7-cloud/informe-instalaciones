@@ -173,6 +173,18 @@ textarea {
   color: #777;
 }
 
+.input-error {
+  border-color: #d33 !important;
+  background: #fff5f5 !important;
+}
+
+.field-error {
+  display: block;
+  color: #a3242c;
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
 .btn-enviar {
   width: 100%;
   background: #1f6feb;
