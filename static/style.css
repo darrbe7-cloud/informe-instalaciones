@@ -57,18 +57,30 @@ label {
 }
 
 input[type="text"],
-textarea {
+textarea,
+select {
   width: 100%;
   padding: 10px;
   border: 1px solid #d7dbe0;
   border-radius: 8px;
   font-size: 1rem;
   background: #fafbfc;
+  font-family: inherit;
 }
 
 textarea {
   resize: vertical;
   font-family: inherit;
+}
+
+select {
+  appearance: auto;
+  -webkit-appearance: menulist;
+}
+
+select:disabled {
+  color: #999;
+  background: #f0f1f3;
 }
 
 .foto-slot {
