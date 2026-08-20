@@ -13,7 +13,7 @@
 <body>
   <header class="app-header">
     <h1>Informe de Instalación</h1>
-    <p class="subtitle">Completá los datos del cliente, sacá las 5 fotos del informe y enviá el PDF por correo</p>
+    <p class="subtitle">Completá los datos del cliente, sacá hasta 8 fotos de la auditoría y enviá el PDF por correo</p>
   </header>
 
   <main>
@@ -56,45 +56,19 @@
       </section>
 
       <section class="card">
-        <h2>Fotos del informe</h2>
-        <p class="hint">La antena y la TV 1 son obligatorias. Las fotos de TV 2 a TV 4 son opcionales, según cuántas TV tenga la instalación. En cada foto de TV podés indicar el nivel de señal medido.</p>
+        <h2>Fotos de la auditoría</h2>
+        <p class="hint">Agregá hasta {{ max_fotos }} fotos. Se toman con la cámara en el momento (no se pueden elegir de la galería) y cada una necesita una breve glosa que indique a qué corresponde (ej: "Antena en el techo", "TV living", "Cableado exterior").</p>
 
-        {% for slot in foto_slots %}
-        <div class="foto-slot" id="slot-{{ slot.key }}">
-          <label class="foto-label">{{ loop.index }}. {{ slot.titulo }} {% if slot.obligatoria %}(obligatoria){% else %}(opcional){% endif %}</label>
+        <div id="fotos-container"></div>
 
-          <div class="foto-input-row">
-            <button type="button" class="foto-btn" onclick="abrirCamara('{{ slot.key }}', '{{ slot.titulo }}')">
-              <span class="foto-preview" id="preview-{{ slot.key }}">📷</span>
-              <span class="foto-btn-text">Tomar foto con la cámara</span>
-            </button>
-            <input
-              type="file"
-              id="foto_{{ slot.key }}"
-              name="foto_{{ slot.key }}"
-              class="foto-file-input"
-              style="display:none"
-              data-obligatoria="{{ 'true' if slot.obligatoria else 'false' }}"
-              data-titulo="{{ slot.titulo }}"
-            />
-          </div>
-
-          {% if slot.requiere_senal %}
-          <input
-            type="text"
-            name="senal_{{ slot.key }}"
-            placeholder="Nivel de señal (ej: 85% o -65 dBm){% if not slot.obligatoria %} - opcional{% endif %}"
-            class="foto-titulo-input"
-            {% if slot.obligatoria %}required{% endif %}
-          />
-          {% endif %}
-        </div>
-        {% endfor %}
+        <button type="button" id="btn-agregar-foto" class="btn-agregar-foto">+ Agregar foto</button>
+        <p class="hint" id="fotos-contador">0 de {{ max_fotos }} fotos agregadas</p>
       </section>
 
       <section class="card">
-        <h2>Observación final</h2>
-        <textarea name="observacion" rows="4" placeholder="Escribí alguna observación adicional para el informe (opcional)"></textarea>
+        <h2>Informe final de la auditoría</h2>
+        <p class="hint">Redactá un resumen breve para cerrar la auditoría: estado general de la instalación, recomendaciones, pendientes, etc.</p>
+        <textarea name="observacion" rows="4" placeholder="Escribí el informe final para cerrar la auditoría (opcional)"></textarea>
       </section>
 
       <section class="card">
@@ -114,6 +88,10 @@
 
         <label for="correo_extra">Otros correos (separados por coma)</label>
         <input type="text" id="correo_extra" name="correo_extra" placeholder="ejemplo1@correo.com, ejemplo2@correo.com" />
+
+        <label for="cc_extra">Con copia (CC) — opcional</label>
+        <input type="text" id="cc_extra" name="cc_extra" placeholder="jefe@correo.com, oficina@correo.com" />
+        <p class="hint">Los correos que escribas acá van a recibir una copia del informe, sin ser destinatarios principales. La app recuerda lo último que escribiste acá y en "Otros correos" para la próxima vez.</p>
       </section>
 
       <button type="submit" class="btn-enviar" id="btn-enviar">Generar PDF y enviar</button>
