@@ -2,9 +2,9 @@
 Informe de Instalación - App web (PWA) en Python
 --------------------------------------------------
 Permite completar los datos del cliente (RUT, dirección, comuna, región),
-sacar las 5 fotos fijas del informe (antena + 4 TV, cada TV con su nivel de
-señal), agregar una observación final, y generar un PDF que se envía por
-correo a los destinatarios seleccionados.
+sacar hasta 8 fotos de la auditoría (cada una con su propia glosa que indica
+a qué corresponde), agregar un informe final para cerrar la auditoría, y
+generar un PDF que se envía por correo a los destinatarios seleccionados.
 
 Ejecutar localmente:
     pip install -r requirements.txt
@@ -49,17 +49,12 @@ load_dotenv()
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONTACTS_PATH = os.path.join(APP_DIR, "contacts.json")
 
-# Estructura fija del informe: la antena + siempre 4 TV (cada una con su
-# nivel de señal). Solo la antena y la TV 1 son obligatorias; TV 2 a TV 4
-# quedan opcionales. "key" se usa para armar los nombres de los campos del
-# formulario (foto_<key>, señal_<key>).
-FOTO_SLOTS = [
-    {"key": "antena", "titulo": "Instalación antena fuera del domicilio", "requiere_senal": False, "obligatoria": True},
-    {"key": "tv1", "titulo": "Instalación TV 1", "requiere_senal": True, "obligatoria": True},
-    {"key": "tv2", "titulo": "Instalación TV 2", "requiere_senal": True, "obligatoria": False},
-    {"key": "tv3", "titulo": "Instalación TV 3", "requiere_senal": True, "obligatoria": False},
-    {"key": "tv4", "titulo": "Instalación TV 4", "requiere_senal": True, "obligatoria": False},
-]
+# Cantidad máxima de fotos que se pueden agregar a una auditoría. El
+# formulario arma los campos de cada foto como foto_1, foto_2, ... foto_N y
+# su glosa (descripción de a qué corresponde) como glosa_1, glosa_2, ...
+# Si cambiás este número, también hay que actualizarlo en static/app.js
+# (constante MAX_FOTOS) y en el texto de ayuda de templates/index.html.
+MAX_FOTOS = 8
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cambia-esto-en-produccion")
@@ -123,7 +118,7 @@ def index():
     return render_template(
         "index.html",
         destinatarios=datos.get("destinatarios", []),
-        foto_slots=FOTO_SLOTS,
+        max_fotos=MAX_FOTOS,
     )
 
 
@@ -143,13 +138,16 @@ def preparar_imagen(file_storage):
 def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos, observacion):
     """Arma el PDF del informe en memoria y devuelve los bytes.
 
-    `fotos` es una lista de tuplas (titulo, foto_buffer, tam_original, nivel_senal_o_None).
+    `fotos` es una lista de tuplas (glosa, foto_buffer, tam_original) — una
+    por cada foto que el técnico agregó (hasta MAX_FOTOS), en el orden en
+    que las cargó.
 
     El diseño busca verse "ejecutivo": encabezado con banda de color, una
     ficha de datos del cliente en formato tabla prolija, cada foto dentro de
-    una tarjeta con su título arriba y el nivel de señal en una franja
-    destacada debajo de la imagen, y las observaciones finales dentro de un
-    recuadro con borde de color (estilo "callout").
+    una tarjeta con su número arriba y su glosa (descripción de a qué
+    corresponde) en una franja destacada debajo de la imagen, y el informe
+    final que cierra la auditoría dentro de un recuadro con borde de color
+    (estilo "callout").
     """
     ANCHO_CONTENIDO = 18 * cm  # A4 (21cm) menos 1.5cm de margen a cada lado
 
@@ -159,8 +157,7 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
     COLOR_BORDE = colors.HexColor("#d7dbe0")
     COLOR_TEXTO = colors.HexColor("#1a1a1a")
     COLOR_TEXTO_MUTED = colors.HexColor("#5a6472")
-    COLOR_SENAL_FONDO = colors.HexColor("#e3f8e9")
-    COLOR_SENAL_TEXTO = colors.HexColor("#14632f")
+    COLOR_GLOSA_FONDO = colors.HexColor("#eef4ff")
     COLOR_OBS_FONDO = colors.HexColor("#f5f9ff")
 
     buffer = io.BytesIO()
@@ -201,9 +198,9 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
         "FotoTitulo", parent=styles["Normal"], fontSize=11.5,
         fontName="Helvetica-Bold", textColor=colors.white,
     )
-    senal_style = ParagraphStyle(
-        "Senal", parent=styles["Normal"], fontSize=10.5, alignment=TA_CENTER,
-        fontName="Helvetica-Bold", textColor=COLOR_SENAL_TEXTO,
+    glosa_style = ParagraphStyle(
+        "Glosa", parent=styles["Normal"], fontSize=10, leading=14,
+        textColor=COLOR_TEXTO,
     )
     observacion_header_style = ParagraphStyle(
         "ObservacionHeader", parent=styles["Normal"], fontSize=11.5,
@@ -283,7 +280,7 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
     max_ancho = 16.4 * cm
     max_alto = 8.6 * cm
 
-    for i, (titulo_foto, foto_buffer, tam_original, nivel_senal) in enumerate(fotos, start=1):
+    for i, (glosa, foto_buffer, tam_original) in enumerate(fotos, start=1):
         ancho_original, alto_original = tam_original
         ratio = min(max_ancho / ancho_original, max_alto / alto_original, 1.0)
         ancho_final = ancho_original * ratio
@@ -292,32 +289,33 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
         imagen = RLImage(foto_buffer, width=ancho_final, height=alto_final)
         imagen.hAlign = "CENTER"
 
-        filas_foto = [[Paragraph(f"{i}.  {titulo_foto}", foto_titulo_style)], [imagen]]
+        filas_foto = [[Paragraph(f"Foto {i}", foto_titulo_style)], [imagen]]
         estilo_foto = [
             ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARIO),
             ("TOPPADDING", (0, 0), (-1, 0), 6),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
             ("LEFTPADDING", (0, 0), (-1, 0), 10),
             ("TOPPADDING", (0, 1), (-1, 1), 8),
-            ("BOTTOMPADDING", (0, 1), (-1, 1), 3 if nivel_senal else 8),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 3),
             ("BOX", (0, 0), (-1, -1), 0.75, COLOR_BORDE),
         ]
 
-        if nivel_senal:
-            filas_foto.append([Paragraph(f"NIVEL DE SEÑAL MEDIDO&nbsp;&nbsp;·&nbsp;&nbsp;{nivel_senal}", senal_style)])
-            estilo_foto.append(("BACKGROUND", (0, 2), (-1, 2), COLOR_SENAL_FONDO))
-            estilo_foto.append(("TOPPADDING", (0, 2), (-1, 2), 6))
-            estilo_foto.append(("BOTTOMPADDING", (0, 2), (-1, 2), 6))
-            estilo_foto.append(("LINEABOVE", (0, 2), (-1, 2), 0.5, COLOR_BORDE))
+        filas_foto.append([Paragraph(f"<b>Descripción:</b> {glosa}", glosa_style)])
+        estilo_foto.append(("BACKGROUND", (0, 2), (-1, 2), COLOR_GLOSA_FONDO))
+        estilo_foto.append(("TOPPADDING", (0, 2), (-1, 2), 8))
+        estilo_foto.append(("BOTTOMPADDING", (0, 2), (-1, 2), 8))
+        estilo_foto.append(("LEFTPADDING", (0, 2), (-1, 2), 10))
+        estilo_foto.append(("RIGHTPADDING", (0, 2), (-1, 2), 10))
+        estilo_foto.append(("LINEABOVE", (0, 2), (-1, 2), 0.5, COLOR_BORDE))
 
         tarjeta_foto = Table(filas_foto, colWidths=[ANCHO_CONTENIDO])
         tarjeta_foto.setStyle(TableStyle(estilo_foto))
 
         elementos.append(KeepTogether([tarjeta_foto, Spacer(1, 14)]))
 
-    # --- Observaciones dentro de un recuadro destacado -------------------
+    # --- Informe final dentro de un recuadro destacado --------------------
     if observacion:
-        contenido_obs = [Paragraph("OBSERVACIONES", observacion_header_style)]
+        contenido_obs = [Paragraph("INFORME FINAL DE LA AUDITORÍA", observacion_header_style)]
         for linea in observacion.splitlines() or [""]:
             contenido_obs.append(Paragraph(linea if linea.strip() else "&nbsp;", observacion_texto_style))
 
@@ -342,7 +340,16 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
     return buffer.getvalue()
 
 
-def enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf):
+def enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf, con_copia=None):
+    """Envía el correo con el PDF adjunto.
+
+    `con_copia` (opcional) es una lista de correos que reciben copia (CC):
+    van visibles en el encabezado "Cc" del correo para todos los que lo
+    reciben, a diferencia de `destinatarios` que son los destinatarios
+    principales ("Para").
+    """
+    con_copia = con_copia or []
+
     remitente = os.environ["EMAIL_ADDRESS"]
     clave = os.environ["EMAIL_PASSWORD"]
     servidor = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
@@ -352,6 +359,8 @@ def enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf):
     mensaje = MIMEMultipart()
     mensaje["From"] = formataddr((nombre_mostrado, remitente))
     mensaje["To"] = ", ".join(destinatarios)
+    if con_copia:
+        mensaje["Cc"] = ", ".join(con_copia)
     mensaje["Subject"] = asunto
     mensaje.attach(MIMEText(cuerpo, "plain", "utf-8"))
 
@@ -359,10 +368,12 @@ def enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf):
     adjunto.add_header("Content-Disposition", "attachment", filename=nombre_pdf)
     mensaje.attach(adjunto)
 
+    todos_los_destinatarios = destinatarios + con_copia
+
     with smtplib.SMTP(servidor, puerto) as smtp:
         smtp.starttls()
         smtp.login(remitente, clave)
-        smtp.sendmail(remitente, destinatarios, mensaje.as_string())
+        smtp.sendmail(remitente, todos_los_destinatarios, mensaje.as_string())
 
 
 @app.route("/enviar", methods=["POST"])
@@ -382,6 +393,13 @@ def enviar():
         destinatarios.extend(extras)
     destinatarios = list(dict.fromkeys(destinatarios))  # sin duplicados, mantiene orden
 
+    cc_extra = request.form.get("cc_extra", "").strip()
+    con_copia = []
+    if cc_extra:
+        con_copia = [c.strip() for c in cc_extra.split(",") if c.strip()]
+    con_copia = list(dict.fromkeys(con_copia))  # sin duplicados, mantiene orden
+    con_copia = [c for c in con_copia if c not in destinatarios]  # evita mandar dos veces al mismo correo
+
     if not destinatarios:
         flash("Tenés que seleccionar o escribir al menos un correo destinatario.", "error")
         return redirect(url_for("index"))
@@ -398,23 +416,32 @@ def enviar():
         return redirect(url_for("index"))
 
     fotos = []
-    faltantes = []
-    for slot in FOTO_SLOTS:
-        key = slot["key"]
-        archivo = request.files.get(f"foto_{key}")
-        nivel_senal = request.form.get(f"senal_{key}", "").strip() if slot["requiere_senal"] else None
+    sin_glosa = []
+    for i in range(1, MAX_FOTOS + 1):
+        archivo = request.files.get(f"foto_{i}")
+        glosa = request.form.get(f"glosa_{i}", "").strip()
 
-        if archivo and archivo.filename:
-            buffer, tam = preparar_imagen(archivo)
-            fotos.append((slot["titulo"], buffer, tam, nivel_senal))
-        elif slot["obligatoria"]:
-            faltantes.append(slot["titulo"])
+        if not archivo or not archivo.filename:
+            continue
 
-    if faltantes:
+        if not glosa:
+            sin_glosa.append(i)
+            continue
+
+        buffer, tam = preparar_imagen(archivo)
+        fotos.append((glosa, buffer, tam))
+
+    if sin_glosa:
         flash(
-            "Faltan fotos obligatorias del informe: " + ", ".join(faltantes) + ".",
+            "Falta indicar la glosa (a qué corresponde) de la foto "
+            + ", ".join(str(n) for n in sin_glosa)
+            + ".",
             "error",
         )
+        return redirect(url_for("index"))
+
+    if not fotos:
+        flash("Agregá al menos una foto a la auditoría antes de enviar.", "error")
         return redirect(url_for("index"))
 
     pdf_bytes = generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos, observacion)
@@ -432,10 +459,12 @@ def enviar():
         f"Dirección: {direccion or '-'}\n"
         f"Comuna: {comuna or '-'}\n"
         f"Región: {region or '-'}\n"
+        f"Cantidad de fotos: {len(fotos)}\n"
+        + (f"Con copia a: {', '.join(con_copia)}\n" if con_copia else "")
     )
 
     try:
-        enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf)
+        enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf, con_copia=con_copia)
     except KeyError:
         flash(
             "Falta configurar EMAIL_ADDRESS y EMAIL_PASSWORD en el archivo .env del servidor.",
@@ -453,7 +482,10 @@ def enviar():
         flash(f"No se pudo enviar el correo: {e}", "error")
         return redirect(url_for("index"))
 
-    flash(f"Informe enviado correctamente a: {', '.join(destinatarios)}", "success")
+    mensaje_exito = f"Informe enviado correctamente a: {', '.join(destinatarios)}"
+    if con_copia:
+        mensaje_exito += f" (con copia a: {', '.join(con_copia)})"
+    flash(mensaje_exito, "success")
     return redirect(url_for("index"))
 
 
