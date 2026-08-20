@@ -154,6 +154,54 @@ select:disabled {
   margin-top: 10px;
 }
 
+.foto-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0;
+}
+
+.foto-slot-header .foto-label {
+  margin: 0;
+}
+
+.foto-eliminar {
+  background: none;
+  border: none;
+  color: #a3242c;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.foto-glosa-input {
+  margin-top: 8px;
+}
+
+.btn-agregar-foto {
+  width: 100%;
+  background: white;
+  color: #1f6feb;
+  border: 1.5px dashed #1f6feb;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.btn-agregar-foto:disabled {
+  display: none;
+}
+
+#fotos-contador {
+  text-align: center;
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
 .destinatarios-lista {
   display: flex;
   flex-direction: column;
