@@ -67,19 +67,120 @@ function inicializarRegionComuna() {
   actualizarComunas();
 }
 
-function previewFoto(clave) {
-  const input = document.getElementById(`foto_${clave}`);
-  const preview = document.getElementById(`preview-${clave}`);
-  const archivo = input.files && input.files[0];
+// --- Fotos dinámicas de la auditoría (hasta MAX_FOTOS) ---------------------
+// En vez de campos fijos, el técnico va agregando fotos con el botón
+// "+ Agregar foto" (hasta el máximo). Cada foto tiene su propia glosa
+// (descripción de a qué corresponde). Los campos se numeran en orden
+// (foto_1, glosa_1, foto_2, glosa_2, ...) cada vez que se agrega o quita
+// una foto, así el backend siempre puede leerlos como foto_1..foto_N.
+//
+// IMPORTANTE: este número tiene que coincidir con MAX_FOTOS en app.py.
+const MAX_FOTOS = 8;
+
+let contadorSlotId = 0;
+
+function crearSlotFoto() {
+  contadorSlotId += 1;
+
+  const slot = document.createElement("div");
+  slot.className = "foto-slot";
+  slot.dataset.slotId = String(contadorSlotId);
+
+  slot.innerHTML = `
+    <div class="foto-slot-header">
+      <label class="foto-label">Foto <span class="foto-slot-numero"></span></label>
+      <button type="button" class="foto-eliminar">Quitar ✕</button>
+    </div>
+    <div class="foto-input-row">
+      <button type="button" class="foto-btn">
+        <span class="foto-preview">📷</span>
+        <span class="foto-btn-text">Tomar foto con la cámara</span>
+      </button>
+      <input type="file" class="foto-file-input" style="display:none" />
+    </div>
+    <input type="text" class="foto-glosa-input" placeholder='Glosa: ¿a qué corresponde esta foto? (ej: "Antena en el techo")' />
+  `;
+
+  const btnCamara = slot.querySelector(".foto-btn");
+  const inputArchivo = slot.querySelector(".foto-file-input");
+  const preview = slot.querySelector(".foto-preview");
+  const btnEliminar = slot.querySelector(".foto-eliminar");
+
+  btnCamara.addEventListener("click", () => {
+    const numero = slot.querySelector(".foto-slot-numero").textContent;
+    abrirCamara(inputArchivo, preview, `Foto ${numero}`);
+  });
+
+  btnEliminar.addEventListener("click", () => {
+    slot.remove();
+    renumerarFotoSlots();
+  });
+
+  return slot;
+}
+
+function agregarFotoSlot() {
+  const contenedor = document.getElementById("fotos-container");
+  if (!contenedor) return;
+
+  const actuales = contenedor.querySelectorAll(".foto-slot").length;
+  if (actuales >= MAX_FOTOS) return;
+
+  contenedor.appendChild(crearSlotFoto());
+  renumerarFotoSlots();
+}
+
+function renumerarFotoSlots() {
+  const contenedor = document.getElementById("fotos-container");
+  if (!contenedor) return;
+
+  const slots = contenedor.querySelectorAll(".foto-slot");
+
+  slots.forEach((slot, index) => {
+    const numero = index + 1;
+    slot.querySelector(".foto-slot-numero").textContent = numero;
+
+    const inputArchivo = slot.querySelector(".foto-file-input");
+    const inputGlosa = slot.querySelector(".foto-glosa-input");
+
+    inputArchivo.name = `foto_${numero}`;
+    inputArchivo.id = `foto_input_${numero}`;
+    inputGlosa.name = `glosa_${numero}`;
+    inputGlosa.id = `glosa_input_${numero}`;
+  });
+
+  const contador = document.getElementById("fotos-contador");
+  if (contador) {
+    contador.textContent = `${slots.length} de ${MAX_FOTOS} fotos agregadas`;
+  }
+
+  const btnAgregar = document.getElementById("btn-agregar-foto");
+  if (btnAgregar) {
+    const alcanzoMaximo = slots.length >= MAX_FOTOS;
+    btnAgregar.disabled = alcanzoMaximo;
+    btnAgregar.style.display = alcanzoMaximo ? "none" : "block";
+  }
+}
+
+function inicializarFotos() {
+  const btnAgregar = document.getElementById("btn-agregar-foto");
+  if (btnAgregar) {
+    btnAgregar.addEventListener("click", agregarFotoSlot);
+  }
+  agregarFotoSlot(); // arranca con una foto lista para completar
+}
+
+function mostrarPreview(inputEl, previewEl) {
+  const archivo = inputEl.files && inputEl.files[0];
 
   if (!archivo) {
-    preview.innerHTML = "📷";
+    previewEl.innerHTML = "📷";
     return;
   }
 
   const lector = new FileReader();
   lector.onload = (e) => {
-    preview.innerHTML = `<img src="${e.target.result}" alt="Vista previa" />`;
+    previewEl.innerHTML = `<img src="${e.target.result}" alt="Vista previa" />`;
   };
   lector.readAsDataURL(archivo);
 }
@@ -91,9 +192,10 @@ function previewFoto(clave) {
 // no queda forma de adjuntar fotos sacadas antes.
 
 let camaraStreamActual = null;
-let camaraSlotActual = null;
+let camaraInputActual = null;
+let camaraPreviewActual = null;
 
-async function abrirCamara(slotKey, titulo) {
+async function abrirCamara(inputEl, previewEl, titulo) {
   const modal = document.getElementById("camera-modal");
   const video = document.getElementById("camera-video");
   const tituloEl = document.getElementById("camera-titulo");
@@ -105,7 +207,8 @@ async function abrirCamara(slotKey, titulo) {
     return;
   }
 
-  camaraSlotActual = slotKey;
+  camaraInputActual = inputEl;
+  camaraPreviewActual = previewEl;
   if (tituloEl) tituloEl.textContent = titulo || "";
 
   try {
@@ -132,14 +235,14 @@ function cerrarCamara() {
     camaraStreamActual.getTracks().forEach((track) => track.stop());
     camaraStreamActual = null;
   }
-  camaraSlotActual = null;
+  camaraInputActual = null;
+  camaraPreviewActual = null;
 }
 
 function capturarFoto() {
   const video = document.getElementById("camera-video");
   const canvas = document.getElementById("camera-canvas");
-  const slotKey = camaraSlotActual;
-  if (!slotKey || !video.videoWidth) return;
+  if (!camaraInputActual || !video.videoWidth) return;
 
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -152,18 +255,62 @@ function capturarFoto() {
         alert("No se pudo capturar la foto, probá de nuevo.");
         return;
       }
-      const archivo = new File([blob], `foto_${slotKey}.jpg`, { type: "image/jpeg" });
-      const input = document.getElementById(`foto_${slotKey}`);
+      const archivo = new File([blob], `foto_${Date.now()}.jpg`, { type: "image/jpeg" });
       const dataTransfer = new DataTransfer();
       dataTransfer.items.add(archivo);
-      input.files = dataTransfer.files;
+      camaraInputActual.files = dataTransfer.files;
 
-      previewFoto(slotKey);
+      mostrarPreview(camaraInputActual, camaraPreviewActual);
       cerrarCamara();
     },
     "image/jpeg",
     0.9
   );
+}
+
+// --- Correos "Otros correos" y "CC" predefinidos ---------------------------
+// Para no tener que escribir siempre los mismos correos, la app guarda en el
+// propio celular (localStorage del navegador) lo último que se escribió en
+// "Otros correos" y en "Con copia (CC)", y lo deja precargado la próxima vez
+// que se abre la app (por ejemplo después de instalarla en la pantalla de
+// inicio). Esto es solo un recordatorio local del celular: cada técnico
+// puede seguir escribiendo o borrando el correo que quiera en el momento.
+
+const CLAVE_CORREO_EXTRA = "informeInstalacion_correoExtra";
+const CLAVE_CC_EXTRA = "informeInstalacion_ccExtra";
+
+function guardarCorreosPredefinidos() {
+  const inputCorreoExtra = document.getElementById("correo_extra");
+  const inputCcExtra = document.getElementById("cc_extra");
+  try {
+    if (inputCorreoExtra) localStorage.setItem(CLAVE_CORREO_EXTRA, inputCorreoExtra.value.trim());
+    if (inputCcExtra) localStorage.setItem(CLAVE_CC_EXTRA, inputCcExtra.value.trim());
+  } catch (err) {
+    // Si el navegador bloquea localStorage (modo privado, etc.), la app
+    // sigue funcionando normalmente, solo que sin recordar los correos.
+  }
+}
+
+function inicializarCorreosPredefinidos() {
+  const inputCorreoExtra = document.getElementById("correo_extra");
+  const inputCcExtra = document.getElementById("cc_extra");
+
+  try {
+    if (inputCorreoExtra) {
+      const guardado = localStorage.getItem(CLAVE_CORREO_EXTRA);
+      if (guardado) inputCorreoExtra.value = guardado;
+    }
+    if (inputCcExtra) {
+      const guardado = localStorage.getItem(CLAVE_CC_EXTRA);
+      if (guardado) inputCcExtra.value = guardado;
+    }
+  } catch (err) {
+    // Si el navegador bloquea localStorage (modo privado, etc.), la app
+    // sigue funcionando normalmente, solo que sin recordar los correos.
+  }
+
+  if (inputCorreoExtra) inputCorreoExtra.addEventListener("blur", guardarCorreosPredefinidos);
+  if (inputCcExtra) inputCcExtra.addEventListener("blur", guardarCorreosPredefinidos);
 }
 
 // --- Validación de RUT chileno --------------------------------------------
@@ -199,6 +346,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const boton = document.getElementById("btn-enviar");
 
   inicializarRegionComuna();
+  inicializarFotos();
+  inicializarCorreosPredefinidos();
 
   const btnCancelar = document.getElementById("camera-cancel");
   const btnCapturar = document.getElementById("camera-capture");
@@ -231,6 +380,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   form.addEventListener("submit", (event) => {
+    guardarCorreosPredefinidos();
+
     if (rutInput && !rutValido(rutInput.value)) {
       event.preventDefault();
       validarRutEnPantalla();
@@ -240,21 +391,40 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Los inputs de tipo archivo están ocultos (las fotos se cargan desde
-    // la cámara en vivo, no eligiéndolos), así que la validación "required"
-    // nativa del navegador no funciona bien sobre ellos. Se valida acá.
-    const fotosObligatorias = document.querySelectorAll(
-      '.foto-file-input[data-obligatoria="true"]'
-    );
-    const faltantes = [];
-    fotosObligatorias.forEach((input) => {
-      if (!input.files || !input.files[0]) {
-        faltantes.push(input.dataset.titulo || input.name);
+    // la cámara en vivo, no eligiéndolas), así que la validación "required"
+    // nativa del navegador no funciona bien sobre ellos. Se valida acá:
+    // tiene que haber al menos una foto, y toda foto que se haya cargado
+    // tiene que tener su glosa completa.
+    const slotsFoto = document.querySelectorAll("#fotos-container .foto-slot");
+    let totalFotos = 0;
+    const glosasFaltantes = [];
+
+    slotsFoto.forEach((slot, index) => {
+      const inputArchivo = slot.querySelector(".foto-file-input");
+      const inputGlosa = slot.querySelector(".foto-glosa-input");
+      const tieneArchivo = inputArchivo && inputArchivo.files && inputArchivo.files[0];
+
+      if (tieneArchivo) {
+        totalFotos += 1;
+        if (!inputGlosa || !inputGlosa.value.trim()) {
+          glosasFaltantes.push(index + 1);
+        }
       }
     });
 
-    if (faltantes.length > 0) {
+    if (totalFotos === 0) {
       event.preventDefault();
-      alert("Faltan estas fotos obligatorias:\n- " + faltantes.join("\n- "));
+      alert("Agregá al menos una foto a la auditoría antes de enviar.");
+      return;
+    }
+
+    if (glosasFaltantes.length > 0) {
+      event.preventDefault();
+      alert(
+        "Falta la glosa (descripción) de la foto " +
+          glosasFaltantes.join(", ") +
+          ". Cada foto necesita indicar a qué corresponde."
+      );
       return;
     }
 
