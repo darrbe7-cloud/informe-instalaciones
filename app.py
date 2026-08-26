@@ -244,7 +244,7 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
         if valor:
             filas_cliente.append([Paragraph(etiqueta, etiqueta_style), Paragraph(valor, valor_style)])
 
-    _agregar_fila("Técnico", tecnico)
+    _agregar_fila("Auditor", tecnico)
     _agregar_fila("Cliente", cliente)
     _agregar_fila("RUT cliente", rut_cliente)
     _agregar_fila("Dirección", direccion)
@@ -453,7 +453,7 @@ def enviar():
         asunto += f" - {cliente}"
     cuerpo = (
         f"Se adjunta el informe de auditoría generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}.\n\n"
-        f"Técnico: {tecnico or '-'}\n"
+        f"Auditor: {tecnico or '-'}\n"
         f"Cliente: {cliente or '-'}\n"
         f"RUT: {rut_cliente or '-'}\n"
         f"Dirección: {direccion or '-'}\n"
