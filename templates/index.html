@@ -73,25 +73,13 @@
 
       <section class="card">
         <h2>Enviar informe a</h2>
-        {% if destinatarios %}
-          <div class="destinatarios-lista">
-            {% for d in destinatarios %}
-              <label class="checkbox-row">
-                <input type="checkbox" name="destinatarios" value="{{ d.correo }}" />
-                {{ d.nombre }} <span class="correo-chico">({{ d.correo }})</span>
-              </label>
-            {% endfor %}
-          </div>
-        {% else %}
-          <p class="hint">No hay destinatarios guardados. Editá <code>contacts.json</code> para agregar contactos frecuentes.</p>
-        {% endif %}
 
-        <label for="correo_extra">Otros correos (separados por coma)</label>
-        <input type="text" id="correo_extra" name="correo_extra" placeholder="ejemplo1@correo.com, ejemplo2@correo.com" />
+        <label for="correo_extra">Para (separados por coma)</label>
+        <input type="text" id="correo_extra" name="correo_extra" placeholder="destinatario1@correo.com, destinatario2@correo.com" required />
 
         <label for="cc_extra">Con copia (CC) — opcional</label>
         <input type="text" id="cc_extra" name="cc_extra" placeholder="jefe@correo.com, oficina@correo.com" />
-        <p class="hint">Los correos que escribas acá van a recibir una copia del informe, sin ser destinatarios principales. La app recuerda lo último que escribiste acá y en "Otros correos" para la próxima vez.</p>
+        <p class="hint">Los correos que escribas en "Con copia" reciben una copia del informe, sin ser destinatarios principales. La app recuerda lo último que escribiste en ambos campos para la próxima vez.</p>
       </section>
 
       <button type="submit" class="btn-enviar" id="btn-enviar">Generar PDF y enviar</button>
