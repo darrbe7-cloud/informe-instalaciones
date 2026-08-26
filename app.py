@@ -1,5 +1,5 @@
 """
-Informe de Instalación - App web (PWA) en Python
+Informe de Auditoría - App web (PWA) en Python
 --------------------------------------------------
 Permite completar los datos del cliente (RUT, dirección, comuna, región),
 sacar hasta 8 fotos de la auditoría (cada una con su propia glosa que indica
@@ -216,7 +216,7 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
     # --- Encabezado con banda de color ---------------------------------
     encabezado = Table(
         [
-            [Paragraph("INFORME DE INSTALACIÓN", titulo_style)],
+            [Paragraph("INFORME DE AUDITORÍA", titulo_style)],
             [Paragraph("Auditoría fotográfica de instalación", subtitulo_header_style)],
         ],
         colWidths=[ANCHO_CONTENIDO],
@@ -354,7 +354,7 @@ def enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf, con_copi
     clave = os.environ["EMAIL_PASSWORD"]
     servidor = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     puerto = int(os.environ.get("SMTP_PORT", 587))
-    nombre_mostrado = os.environ.get("EMAIL_DISPLAY_NAME", "Informes de Instalación")
+    nombre_mostrado = os.environ.get("EMAIL_DISPLAY_NAME", "Informes de Auditoría")
 
     mensaje = MIMEMultipart()
     mensaje["From"] = formataddr((nombre_mostrado, remitente))
@@ -452,7 +452,7 @@ def enviar():
     if cliente:
         asunto += f" - {cliente}"
     cuerpo = (
-        f"Se adjunta el informe de instalación generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}.\n\n"
+        f"Se adjunta el informe de auditoría generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}.\n\n"
         f"Técnico: {tecnico or '-'}\n"
         f"Cliente: {cliente or '-'}\n"
         f"RUT: {rut_cliente or '-'}\n"
