@@ -15,7 +15,6 @@ en la consola, por ejemplo: http://192.168.1.5:5000
 """
 
 import io
-import json
 import os
 import re
 import smtplib
@@ -47,7 +46,6 @@ from reportlab.platypus import (
 load_dotenv()
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-CONTACTS_PATH = os.path.join(APP_DIR, "contacts.json")
 
 # Cantidad máxima de fotos que se pueden agregar a una auditoría. El
 # formulario arma los campos de cada foto como foto_1, foto_2, ... foto_N y
@@ -59,11 +57,6 @@ MAX_FOTOS = 8
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cambia-esto-en-produccion")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB por envío
-
-
-def cargar_contactos():
-    with open(CONTACTS_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def _limpiar_rut(rut):
@@ -114,10 +107,8 @@ def assetlinks():
 
 @app.route("/", methods=["GET"])
 def index():
-    datos = cargar_contactos()
     return render_template(
         "index.html",
-        destinatarios=datos.get("destinatarios", []),
         max_fotos=MAX_FOTOS,
     )
 
@@ -386,11 +377,8 @@ def enviar():
     region = request.form.get("region", "").strip()
     observacion = request.form.get("observacion", "").strip()
 
-    destinatarios = request.form.getlist("destinatarios")
     correo_extra = request.form.get("correo_extra", "").strip()
-    if correo_extra:
-        extras = [c.strip() for c in correo_extra.split(",") if c.strip()]
-        destinatarios.extend(extras)
+    destinatarios = [c.strip() for c in correo_extra.split(",") if c.strip()] if correo_extra else []
     destinatarios = list(dict.fromkeys(destinatarios))  # sin duplicados, mantiene orden
 
     cc_extra = request.form.get("cc_extra", "").strip()
