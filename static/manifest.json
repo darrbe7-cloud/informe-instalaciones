@@ -1,6 +1,6 @@
 {
-  "name": "Informe de Instalación",
-  "short_name": "Informes",
+  "name": "Informe de Auditoría",
+  "short_name": "Auditoría",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f6f8",
