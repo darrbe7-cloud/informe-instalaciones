@@ -13,7 +13,7 @@
 <body>
   <header class="app-header">
     <h1>Informe de Auditoría</h1>
-    <p class="subtitle">Completá los datos del cliente, sacá hasta 8 fotos de la auditoría y enviá el PDF por correo</p>
+    <p class="subtitle">Completá los datos del cliente, sacá hasta 8 fotos de la auditoría y compartí el PDF por correo</p>
   </header>
 
   <main>
@@ -27,7 +27,7 @@
       {% endif %}
     {% endwith %}
 
-    <form action="{{ url_for('enviar') }}" method="POST" enctype="multipart/form-data" id="form-informe">
+    <form action="{{ url_for('generar_pdf_endpoint') }}" method="POST" enctype="multipart/form-data" id="form-informe">
 
       <section class="card">
         <h2>Datos del cliente</h2>
@@ -71,18 +71,7 @@
         <textarea name="observacion" rows="4" placeholder="Escribí el informe final para cerrar la auditoría (opcional)"></textarea>
       </section>
 
-      <section class="card">
-        <h2>Enviar informe a</h2>
-
-        <label for="correo_extra">Para (separados por coma)</label>
-        <input type="text" id="correo_extra" name="correo_extra" placeholder="destinatario1@correo.com, destinatario2@correo.com" required />
-
-        <label for="cc_extra">Con copia (CC) — opcional</label>
-        <input type="text" id="cc_extra" name="cc_extra" placeholder="jefe@correo.com, oficina@correo.com" />
-        <p class="hint">Los correos que escribas en "Con copia" reciben una copia del informe, sin ser destinatarios principales. La app recuerda lo último que escribiste en ambos campos para la próxima vez.</p>
-      </section>
-
-      <button type="submit" class="btn-enviar" id="btn-enviar">Generar PDF y enviar</button>
+      <button type="submit" class="btn-enviar" id="btn-enviar">Generar PDF y compartir</button>
     </form>
   </main>
 
