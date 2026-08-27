@@ -4,7 +4,9 @@ Informe de Auditoría - App web (PWA) en Python
 Permite completar los datos del cliente (RUT, dirección, comuna, región),
 sacar hasta 8 fotos de la auditoría (cada una con su propia glosa que indica
 a qué corresponde), agregar un informe final para cerrar la auditoría, y
-generar un PDF que se envía por correo a los destinatarios seleccionados.
+generar un PDF que se comparte usando el menú nativo de "Compartir" del
+celular (Gmail, Outlook, WhatsApp, etc.), para que cada auditor lo mande
+desde su propia cuenta de correo.
 
 Ejecutar localmente:
     pip install -r requirements.txt
@@ -17,15 +19,10 @@ en la consola, por ejemplo: http://192.168.1.5:5000
 import io
 import os
 import re
-import smtplib
 from datetime import datetime
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formataddr
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
 from PIL import Image, ImageOps
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -331,44 +328,16 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
     return buffer.getvalue()
 
 
-def enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf, con_copia=None):
-    """Envía el correo con el PDF adjunto.
+@app.route("/generar-pdf", methods=["POST"])
+def generar_pdf_endpoint():
+    """Genera el PDF de la auditoría y lo devuelve como archivo descargable.
 
-    `con_copia` (opcional) es una lista de correos que reciben copia (CC):
-    van visibles en el encabezado "Cc" del correo para todos los que lo
-    reciben, a diferencia de `destinatarios` que son los destinatarios
-    principales ("Para").
+    No envía ningún correo desde el servidor: el navegador recibe el PDF y
+    usa la función nativa de "Compartir" del celular para que el propio
+    auditor lo mande desde su app de correo (Gmail, Outlook, la que tenga
+    instalada), con su propia cuenta. Si algo falla en la validación,
+    devuelve un JSON con "error" y código 400 en vez de generar el PDF.
     """
-    con_copia = con_copia or []
-
-    remitente = os.environ["EMAIL_ADDRESS"]
-    clave = os.environ["EMAIL_PASSWORD"]
-    servidor = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    puerto = int(os.environ.get("SMTP_PORT", 587))
-    nombre_mostrado = os.environ.get("EMAIL_DISPLAY_NAME", "Informes de Auditoría")
-
-    mensaje = MIMEMultipart()
-    mensaje["From"] = formataddr((nombre_mostrado, remitente))
-    mensaje["To"] = ", ".join(destinatarios)
-    if con_copia:
-        mensaje["Cc"] = ", ".join(con_copia)
-    mensaje["Subject"] = asunto
-    mensaje.attach(MIMEText(cuerpo, "plain", "utf-8"))
-
-    adjunto = MIMEApplication(pdf_bytes, _subtype="pdf")
-    adjunto.add_header("Content-Disposition", "attachment", filename=nombre_pdf)
-    mensaje.attach(adjunto)
-
-    todos_los_destinatarios = destinatarios + con_copia
-
-    with smtplib.SMTP(servidor, puerto) as smtp:
-        smtp.starttls()
-        smtp.login(remitente, clave)
-        smtp.sendmail(remitente, todos_los_destinatarios, mensaje.as_string())
-
-
-@app.route("/enviar", methods=["POST"])
-def enviar():
     tecnico = request.form.get("tecnico", "").strip()
     cliente = request.form.get("cliente", "").strip()
     rut_cliente = request.form.get("rut_cliente", "").strip()
@@ -377,31 +346,16 @@ def enviar():
     region = request.form.get("region", "").strip()
     observacion = request.form.get("observacion", "").strip()
 
-    correo_extra = request.form.get("correo_extra", "").strip()
-    destinatarios = [c.strip() for c in correo_extra.split(",") if c.strip()] if correo_extra else []
-    destinatarios = list(dict.fromkeys(destinatarios))  # sin duplicados, mantiene orden
-
-    cc_extra = request.form.get("cc_extra", "").strip()
-    con_copia = []
-    if cc_extra:
-        con_copia = [c.strip() for c in cc_extra.split(",") if c.strip()]
-    con_copia = list(dict.fromkeys(con_copia))  # sin duplicados, mantiene orden
-    con_copia = [c for c in con_copia if c not in destinatarios]  # evita mandar dos veces al mismo correo
-
-    if not destinatarios:
-        flash("Tenés que seleccionar o escribir al menos un correo destinatario.", "error")
-        return redirect(url_for("index"))
-
     if not rut_cliente:
-        flash("Tenés que completar el RUT del cliente.", "error")
-        return redirect(url_for("index"))
+        return jsonify({"error": "Tenés que completar el RUT del cliente."}), 400
 
     if not rut_valido(rut_cliente):
-        flash(
-            "El RUT del cliente no es válido. Revisá que esté bien escrito, incluyendo el dígito verificador (ej: 12.345.678-5).",
-            "error",
-        )
-        return redirect(url_for("index"))
+        return jsonify(
+            {
+                "error": "El RUT del cliente no es válido. Revisá que esté bien escrito, "
+                "incluyendo el dígito verificador (ej: 12.345.678-5)."
+            }
+        ), 400
 
     fotos = []
     sin_glosa = []
@@ -420,61 +374,28 @@ def enviar():
         fotos.append((glosa, buffer, tam))
 
     if sin_glosa:
-        flash(
-            "Falta indicar la glosa (a qué corresponde) de la foto "
-            + ", ".join(str(n) for n in sin_glosa)
-            + ".",
-            "error",
-        )
-        return redirect(url_for("index"))
+        return jsonify(
+            {
+                "error": "Falta indicar la glosa (a qué corresponde) de la foto "
+                + ", ".join(str(n) for n in sin_glosa)
+                + "."
+            }
+        ), 400
 
     if not fotos:
-        flash("Agregá al menos una foto a la auditoría antes de enviar.", "error")
-        return redirect(url_for("index"))
+        return jsonify({"error": "Agregá al menos una foto a la auditoría antes de generar el PDF."}), 400
 
     pdf_bytes = generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos, observacion)
 
     fecha_archivo = datetime.now().strftime("%Y%m%d_%H%M")
     nombre_pdf = f"Auditoria_Fotografica_{rut_cliente}_{fecha_archivo}.pdf".replace(" ", "")
-    asunto = f"Auditoría Fotográfica Cliente RUT {rut_cliente}"
-    if cliente:
-        asunto += f" - {cliente}"
-    cuerpo = (
-        f"Se adjunta el informe de auditoría generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}.\n\n"
-        f"Auditor: {tecnico or '-'}\n"
-        f"Cliente: {cliente or '-'}\n"
-        f"RUT: {rut_cliente or '-'}\n"
-        f"Dirección: {direccion or '-'}\n"
-        f"Comuna: {comuna or '-'}\n"
-        f"Región: {region or '-'}\n"
-        f"Cantidad de fotos: {len(fotos)}\n"
-        + (f"Con copia a: {', '.join(con_copia)}\n" if con_copia else "")
+
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=nombre_pdf,
     )
-
-    try:
-        enviar_correo(destinatarios, asunto, cuerpo, pdf_bytes, nombre_pdf, con_copia=con_copia)
-    except KeyError:
-        flash(
-            "Falta configurar EMAIL_ADDRESS y EMAIL_PASSWORD en el archivo .env del servidor.",
-            "error",
-        )
-        return redirect(url_for("index"))
-    except smtplib.SMTPAuthenticationError:
-        flash(
-            "El servidor de correo rechazó las credenciales. Revisá EMAIL_ADDRESS/EMAIL_PASSWORD "
-            "(recordá usar una contraseña de aplicación, no la contraseña normal).",
-            "error",
-        )
-        return redirect(url_for("index"))
-    except Exception as e:
-        flash(f"No se pudo enviar el correo: {e}", "error")
-        return redirect(url_for("index"))
-
-    mensaje_exito = f"Informe enviado correctamente a: {', '.join(destinatarios)}"
-    if con_copia:
-        mensaje_exito += f" (con copia a: {', '.join(con_copia)})"
-    flash(mensaje_exito, "success")
-    return redirect(url_for("index"))
 
 
 if __name__ == "__main__":
