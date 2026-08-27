@@ -268,49 +268,103 @@ function capturarFoto() {
   );
 }
 
-// --- Correos "Otros correos" y "CC" predefinidos ---------------------------
-// Para no tener que escribir siempre los mismos correos, la app guarda en el
-// propio celular (localStorage del navegador) lo último que se escribió en
-// "Otros correos" y en "Con copia (CC)", y lo deja precargado la próxima vez
-// que se abre la app (por ejemplo después de instalarla en la pantalla de
-// inicio). Esto es solo un recordatorio local del celular: cada técnico
-// puede seguir escribiendo o borrando el correo que quiera en el momento.
+// --- Compartir el PDF generado ---------------------------------------------
+// En vez de mandar el correo desde el servidor con una cuenta fija, la app
+// genera el PDF y se lo entrega al celular usando la Web Share API (la
+// misma función que usa "Compartir" en WhatsApp o Instagram). El propio
+// auditor elige con qué app mandarlo (Gmail, Outlook, etc.), usando su
+// propia cuenta de correo ya configurada en el celular. Si el navegador no
+// soporta compartir archivos, el PDF se descarga para adjuntarlo a mano.
 
-const CLAVE_CORREO_EXTRA = "informeInstalacion_correoExtra";
-const CLAVE_CC_EXTRA = "informeInstalacion_ccExtra";
-
-function guardarCorreosPredefinidos() {
-  const inputCorreoExtra = document.getElementById("correo_extra");
-  const inputCcExtra = document.getElementById("cc_extra");
-  try {
-    if (inputCorreoExtra) localStorage.setItem(CLAVE_CORREO_EXTRA, inputCorreoExtra.value.trim());
-    if (inputCcExtra) localStorage.setItem(CLAVE_CC_EXTRA, inputCcExtra.value.trim());
-  } catch (err) {
-    // Si el navegador bloquea localStorage (modo privado, etc.), la app
-    // sigue funcionando normalmente, solo que sin recordar los correos.
+function mostrarEstadoEnvio(mensaje, tipo) {
+  let contenedor = document.getElementById("estado-envio");
+  if (!contenedor) {
+    contenedor = document.createElement("div");
+    contenedor.id = "estado-envio";
+    contenedor.className = "flash-container";
+    const main = document.querySelector("main");
+    if (main) main.insertBefore(contenedor, main.firstChild);
   }
+  contenedor.innerHTML = `<div class="flash flash-${tipo}">${mensaje}</div>`;
+  contenedor.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function inicializarCorreosPredefinidos() {
-  const inputCorreoExtra = document.getElementById("correo_extra");
-  const inputCcExtra = document.getElementById("cc_extra");
+function descargarComoArchivo(blob, nombreArchivo) {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombreArchivo;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+function nombreDesdeContentDisposition(disposition, porDefecto) {
+  if (!disposition) return porDefecto;
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  return match ? decodeURIComponent(match[1]) : porDefecto;
+}
+
+async function generarYCompartirPdf(form, boton) {
+  boton.disabled = true;
+  boton.textContent = "Generando PDF...";
 
   try {
-    if (inputCorreoExtra) {
-      const guardado = localStorage.getItem(CLAVE_CORREO_EXTRA);
-      if (guardado) inputCorreoExtra.value = guardado;
+    const formData = new FormData(form);
+    const resp = await fetch(form.action, { method: "POST", body: formData });
+
+    if (!resp.ok) {
+      let mensajeError = "No se pudo generar el PDF.";
+      try {
+        const data = await resp.json();
+        if (data && data.error) mensajeError = data.error;
+      } catch (err) {
+        // si la respuesta de error no viene en JSON, se usa el mensaje genérico
+      }
+      throw new Error(mensajeError);
     }
-    if (inputCcExtra) {
-      const guardado = localStorage.getItem(CLAVE_CC_EXTRA);
-      if (guardado) inputCcExtra.value = guardado;
+
+    const nombreArchivo = nombreDesdeContentDisposition(
+      resp.headers.get("Content-Disposition"),
+      "Informe_Auditoria.pdf"
+    );
+    const blob = await resp.blob();
+    const archivoPdf = new File([blob], nombreArchivo, { type: "application/pdf" });
+
+    if (navigator.canShare && navigator.canShare({ files: [archivoPdf] })) {
+      try {
+        await navigator.share({
+          files: [archivoPdf],
+          title: "Informe de Auditoría",
+          text: "Se adjunta el informe de auditoría generado desde la app.",
+        });
+        mostrarEstadoEnvio("PDF generado. Elegí la app de correo para enviarlo.", "success");
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          // El auditor cerró el menú de compartir sin elegir nada: no es un error.
+          mostrarEstadoEnvio("PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras enviarlo.", "success");
+        } else {
+          descargarComoArchivo(blob, nombreArchivo);
+          mostrarEstadoEnvio(
+            "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente desde tu app de correo.",
+            "error"
+          );
+        }
+      }
+    } else {
+      descargarComoArchivo(blob, nombreArchivo);
+      mostrarEstadoEnvio(
+        "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente desde tu app de correo.",
+        "error"
+      );
     }
   } catch (err) {
-    // Si el navegador bloquea localStorage (modo privado, etc.), la app
-    // sigue funcionando normalmente, solo que sin recordar los correos.
+    mostrarEstadoEnvio(err.message || "No se pudo generar el PDF.", "error");
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Generar PDF y compartir";
   }
-
-  if (inputCorreoExtra) inputCorreoExtra.addEventListener("blur", guardarCorreosPredefinidos);
-  if (inputCcExtra) inputCcExtra.addEventListener("blur", guardarCorreosPredefinidos);
 }
 
 // --- Validación de RUT chileno --------------------------------------------
@@ -347,7 +401,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   inicializarRegionComuna();
   inicializarFotos();
-  inicializarCorreosPredefinidos();
 
   const btnCancelar = document.getElementById("camera-cancel");
   const btnCapturar = document.getElementById("camera-capture");
@@ -380,7 +433,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   form.addEventListener("submit", (event) => {
-    guardarCorreosPredefinidos();
+    event.preventDefault();
 
     if (rutInput && !rutValido(rutInput.value)) {
       event.preventDefault();
@@ -413,13 +466,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (totalFotos === 0) {
-      event.preventDefault();
-      alert("Agregá al menos una foto a la auditoría antes de enviar.");
+      alert("Agregá al menos una foto a la auditoría antes de generar el PDF.");
       return;
     }
 
     if (glosasFaltantes.length > 0) {
-      event.preventDefault();
       alert(
         "Falta la glosa (descripción) de la foto " +
           glosasFaltantes.join(", ") +
@@ -428,8 +479,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    boton.disabled = true;
-    boton.textContent = "Enviando...";
+    generarYCompartirPdf(form, boton);
   });
 
   if ("serviceWorker" in navigator) {
