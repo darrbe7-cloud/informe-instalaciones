@@ -101,6 +101,24 @@ def assetlinks():
     )
 
 
+@app.route("/service-worker.js", methods=["GET"])
+def service_worker():
+    """
+    Sirve el service worker en /service-worker.js (en vez de
+    /static/service-worker.js). Es importante que esté en la raíz: por
+    default, un service worker solo "controla" (queda con alcance sobre)
+    las páginas dentro de su misma carpeta o subcarpetas — si quedara en
+    /static/, no cubriría el resto de la app que vive en "/", y
+    herramientas como PWABuilder lo marcan como si no hubiera service
+    worker instalado.
+    """
+    return send_from_directory(
+        os.path.join(APP_DIR, "static"),
+        "service-worker.js",
+        mimetype="application/javascript",
+    )
+
+
 @app.route("/privacidad.html", methods=["GET"])
 def privacidad():
     """
