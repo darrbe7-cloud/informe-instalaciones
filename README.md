@@ -1,14 +1,18 @@
-# Informe de Instalación (app web en Python)
+# Informe de Auditoría (app web en Python)
 
-Aplicación web para técnicos: completá los datos del cliente (RUT, dirección,
-comuna y región), sacá las 5 fotos fijas que pide el informe (la instalación
-de la antena, más las 4 instalaciones de TV, cada una con su nivel de señal),
-agregá una observación final, y al tocar **Enviar** se genera automáticamente
-un PDF que se manda por correo a los destinatarios elegidos.
+Aplicación web para auditores/técnicos: completá los datos del cliente (RUT,
+dirección, comuna y región), sacá hasta 8 fotos de la auditoría —cada una
+con su propia glosa (descripción de a qué corresponde)—, agregá un informe
+final para cerrar la auditoría, y generá un PDF ejecutivo con todo eso. El
+PDF no lo manda el servidor: se entrega al celular, que abre el menú nativo
+de "Compartir" para que el propio auditor lo mande por correo (o por la app
+que prefiera) usando su propia cuenta.
 
 Es una **PWA** (app web instalable): se abre desde el navegador del celular
 (Android o iPhone) y se puede "Agregar a pantalla de inicio" para que quede
-como un ícono más, sin pasar por ninguna tienda de aplicaciones ni pagar nada.
+como un ícono más, sin pasar por ninguna tienda de aplicaciones ni pagar
+nada. Además, se puede empaquetar para publicarla en **Google Play**
+(ver sección 7).
 
 ---
 
@@ -22,57 +26,24 @@ cd informe-instalaciones
 pip install -r requirements.txt
 ```
 
-## 2. Configurar el envío de correo
+## 2. Configuración (opcional)
+
+La app funciona sin configuración adicional. Si querés, podés definir una
+clave secreta propia de Flask:
 
 1. Copiá `.env.example` como `.env`:
    ```bash
    cp .env.example .env
    ```
-2. Completá `EMAIL_ADDRESS` con tu correo (Gmail u Outlook).
-3. Completá `EMAIL_PASSWORD` con una **contraseña de aplicación** (no la
-   contraseña normal de tu cuenta). Ver el paso a paso más abajo.
-4. Si usás Outlook/Office365 en vez de Gmail, descomentá esas líneas de
-   `SMTP_SERVER`/`SMTP_PORT` y comentá las de Gmail.
+2. Completá `FLASK_SECRET_KEY` con cualquier texto largo inventado.
 
-### Cómo crear una contraseña de aplicación en Gmail
+**Nota:** versiones anteriores de esta app enviaban el correo directamente
+desde el servidor (con una cuenta de Gmail/Outlook configurada en variables
+de entorno). Eso ya no es así: ahora el PDF se comparte desde el propio
+celular del auditor, así que no hace falta configurar ninguna cuenta de
+correo en el servidor.
 
-1. Andá a https://myaccount.google.com/security
-2. Activá la "Verificación en dos pasos" si todavía no la tenés activada
-   (es un requisito para poder generar contraseñas de aplicación).
-3. Buscá "Contraseñas de aplicaciones" (Search en la parte superior de la
-   página de tu cuenta de Google → escribí "contraseñas de aplicaciones").
-4. Creá una nueva, ponele un nombre como "Informe Instalaciones", y copiá el
-   código de 16 caracteres que te muestra.
-5. Pegalo en `EMAIL_PASSWORD` dentro del archivo `.env` (sin espacios).
-
-### Cómo crear una contraseña de aplicación en Outlook/Office365
-
-1. Andá a https://account.microsoft.com/security
-2. Activá la verificación en dos pasos.
-3. Buscá "Opciones de seguridad avanzadas" → "Contraseñas de aplicación" →
-   creá una nueva y copiala en `EMAIL_PASSWORD`.
-
-**Importante:** el archivo `.env` tiene tus credenciales, no lo compartas ni
-lo subas a repositorios públicos.
-
-## 3. Agregar contactos frecuentes (opcional)
-
-Editá `contacts.json` para que los destinatarios habituales aparezcan como
-casilleros para tildar en la app, en vez de tener que escribirlos cada vez:
-
-```json
-{
-  "destinatarios": [
-    { "nombre": "Oficina Central", "correo": "oficina@tuempresa.com" },
-    { "nombre": "Supervisor", "correo": "supervisor@tuempresa.com" }
-  ]
-}
-```
-
-También podés escribir cualquier otro correo al momento de enviar, en el
-campo "Otros correos".
-
-## 4. Probar en tu computadora
+## 3. Probar en tu computadora
 
 ```bash
 python app.py
@@ -84,9 +55,10 @@ Vas a ver algo como:
 Running on http://0.0.0.0:5000
 ```
 
-Abrí `http://localhost:5000` desde tu computadora para probar el formulario.
+Abrí `http://localhost:5000` desde tu computadora para probar el formulario
+(la cámara y el botón de compartir solo funcionan bien desde un celular).
 
-## 5. Usarla desde el celular
+## 4. Usarla desde el celular
 
 ### Opción rápida (misma red Wi-Fi, para probar)
 
@@ -118,13 +90,17 @@ todo se hace desde el navegador.
    **"uploading an existing file"**.
 5. En tu computadora, descomprimí (extraé) el archivo `.zip` que te mandé.
 6. Arrastrá **todo el contenido** de la carpeta `informe-instalaciones`
-   (el archivo `app.py`, `requirements.txt`, `contacts.json`, y las carpetas
-   `templates` y `static` completas) a la zona que dice "Drag files here to
-   add them to your repository". Importante: arrastrá las carpetas
-   `templates` y `static` enteras, no solo los archivos de adentro, para que
-   se mantenga la misma estructura.
+   (el archivo `app.py`, `requirements.txt`, y las carpetas `templates` y
+   `static` completas) a la zona que dice "Drag files here to add them to
+   your repository". Importante: arrastrá las carpetas `templates` y
+   `static` enteras, no solo los archivos de adentro, para que se mantenga
+   la misma estructura.
 7. Abajo de todo, escribí un mensaje como "primera versión" y tocá
    **"Commit changes"**.
+
+Para cambios posteriores (como los que venimos haciendo), simplemente
+abrís el archivo dentro de GitHub, tocás el lápiz (editar), pegás el
+contenido nuevo completo, y hacés "Commit changes" de nuevo.
 
 **Paso 2 — Crear el servicio en Render**
 
@@ -139,14 +115,8 @@ todo se hace desde el navegador.
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `gunicorn app:app`
    - **Instance Type**: `Free`
-5. Bajá hasta **"Environment Variables"** y agregá una por una las mismas
-   que pusiste en tu `.env`:
-   - `EMAIL_ADDRESS`
-   - `EMAIL_PASSWORD` (la contraseña de aplicación de 16 caracteres)
-   - `SMTP_SERVER` (ej. `smtp.gmail.com`)
-   - `SMTP_PORT` (ej. `587`)
-   - `EMAIL_DISPLAY_NAME`
-   - `FLASK_SECRET_KEY` (cualquier texto largo inventado)
+5. (Opcional) En **"Environment Variables"** podés agregar
+   `FLASK_SECRET_KEY` con cualquier texto largo inventado.
 6. Tocá **"Create Web Service"** y esperá unos minutos mientras se instala
    y arranca. Cuando termine, Render te muestra una URL fija, algo como
    `https://informe-instalaciones.onrender.com`.
@@ -168,41 +138,52 @@ responder. Después de esa primera carga anda normal.
    como cualquier otra app, y al abrirlo ya no muestra la barra del
    navegador.
 
-## 6. Cómo se usa
+## 5. Cómo se usa
 
-1. Abrís la app desde el ícono en el celular.
-2. Completás los datos del cliente: técnico, nombre del cliente, RUT,
+1. El auditor abre la app desde el ícono en el celular.
+2. Completa los datos del cliente: auditor, nombre del cliente, RUT,
    dirección, comuna y región.
-3. Sacás las 5 fotos obligatorias del informe, en este orden fijo:
-   1. Instalación antena fuera del domicilio
-   2. Instalación TV 1 (con su nivel de señal)
-   3. Instalación TV 2 (con su nivel de señal)
-   4. Instalación TV 3 (con su nivel de señal)
-   5. Instalación TV 4 (con su nivel de señal)
+3. Toca "+ Agregar foto" para cada foto que necesite (hasta 8). Cada foto se
+   saca en el momento con la cámara (no se puede elegir de la galería), y
+   hay que escribir una glosa breve que indique a qué corresponde (por
+   ejemplo "Antena en el techo", "TV living", "Cableado exterior"). Se
+   pueden agregar o quitar fotos libremente antes de enviar.
+4. Escribe el informe final que cierra la auditoría (resumen, estado
+   general, recomendaciones, pendientes, etc.).
+5. Toca **"Generar PDF y compartir"**. El celular arma el PDF (con los
+   datos del cliente, cada foto con su glosa, y el informe final) y abre el
+   menú nativo de "Compartir" para elegir con qué app enviarlo — Gmail,
+   Outlook, WhatsApp, la que tenga instalada — usando su propia cuenta. Si
+   el navegador no soporta compartir así, el PDF se descarga directo al
+   celular para adjuntarlo a mano.
 
-   Para cada una, tocás "Tomar / elegir foto" (abre la cámara directo). En
-   las 4 fotos de TV, además escribís el nivel de señal medido (por
-   ejemplo "85%" o "-65 dBm").
-4. Escribís una observación final si querés.
-5. Tildás los destinatarios guardados y/o escribís otros correos.
-6. Tocás "Generar PDF y enviar". Si falta alguna de las 5 fotos
-   obligatorias, la app te avisa cuáles antes de dejarte enviar. Si está
-   todo completo, arma el PDF (con los datos del cliente, las fotos, el
-   nivel de señal de cada TV y la observación) y lo manda por correo como
-   adjunto a todos los destinatarios elegidos.
+## 6. Sobre iPhone y las tiendas de aplicaciones
 
-## 7. Publicarla en Google Play Store (opcional)
+**Android (Google Play):** se puede publicar sin problema empaquetando la
+PWA — ver sección 7 más abajo.
+
+**iPhone (Apple App Store):** Apple rechaza casi sistemáticamente las apps
+que son, en el fondo, solo una página web empaquetada sin funciones
+nativas reales (regla 4.2 "Minimum Functionality" de sus lineamientos de
+revisión). Como esta app no tiene funciones nativas más allá de lo que ya
+hace en el navegador, intentar subirla a la App Store tiene un riesgo alto
+de rechazo, además de requerir una cuenta de Apple Developer paga (99
+USD/año).
+
+Por eso, para iPhone la recomendación es **no pasar por la App Store**: el
+usuario simplemente abre la URL en Safari y usa "Agregar a pantalla de
+inicio" (paso 3 más arriba). Queda instalada igual que cualquier app, con
+ícono propio, funciona con la cámara y todo lo demás, sin pagar nada, sin
+depender de que Apple la apruebe, y se actualiza sola cada vez que subís
+cambios nuevos (a diferencia de una app de tienda, que tarda en aprobarse
+cada actualización).
+
+## 7. Publicarla en Google Play Store
 
 **Importante:** esta parte requiere que la app ya esté desplegada online con
-una URL pública en HTTPS (paso 5, sección "Render"). No es posible generar
+una URL pública en HTTPS (sección 4, "Render"). No es posible generar
 el paquete para Google Play sin eso, porque la herramienta necesita
 "leer" la app real desde internet.
-
-**Nota sobre Apple App Store:** Apple no acepta apps que son básicamente una
-página web empaquetada (rechaza este tipo de apps por la regla "4.2 Minimum
-Functionality"). Por eso esta sección solo cubre Google Play. En iPhone, la
-app se sigue usando instalándola desde el navegador como PWA (ver paso 5),
-que funciona igual de bien aunque no aparezca en la App Store.
 
 ### Paso 1 — Generar el paquete Android con PWABuilder
 
@@ -214,28 +195,35 @@ que funciona igual de bien aunque no aparezca en la App Store.
    (manifest.json, ícono, service worker) debería estar en verde o cerca.
 4. Tocá "Package for stores" → elegí **"Android"**.
 5. Te va a pedir algunos datos (nombre del paquete, ej.
-   `com.tuempresa.informeinstalaciones`) y generar una clave de firma
-   (podés dejar que PWABuilder la genere automáticamente).
+   `com.tuempresa.informeauditoria`) y generar una clave de firma (podés
+   dejar que PWABuilder la genere automáticamente).
 6. Descargá el paquete `.aab` que genera, y **guardá también el archivo de
-   la clave de firma que te da** (lo vas a necesitar si algún día actualizás
-   la app).
+   la clave de firma que te da** en un lugar seguro (lo vas a necesitar si
+   algún día actualizás la app — si la perdés, no vas a poder subir
+   actualizaciones nunca más).
 7. PWABuilder también te va a mostrar un texto para un archivo llamado
    `assetlinks.json` (con una huella digital / fingerprint). Copiá ese
-   contenido.
+   contenido completo.
 
 ### Paso 2 — Verificar el dominio (Digital Asset Links)
 
 Esto es lo que hace que la app en el celular se vea "sin barra de
 navegador", como una app nativa de verdad:
 
-1. Reemplazá el contenido del archivo `static/.well-known/assetlinks.json`
-   de tu proyecto (creá esa carpeta `.well-known` si no existe) con el
-   texto que te dio PWABuilder en el paso anterior.
-2. Subí ese cambio a GitHub (arrastrando el archivo actualizado al
-   repositorio, igual que hiciste la primera vez) — Render va a redesplegar
-   solo cuando detecte el cambio.
-3. Verificá que quede accesible en:
-   `https://tu-app.onrender.com/.well-known/assetlinks.json`
+1. En GitHub, andá al repositorio y tocá **"Add file" → "Create new file"**
+   (no uses "arrastrar archivos" para este paso, porque GitHub a veces no
+   crea bien carpetas que empiezan con un punto si se arrastran).
+2. En el campo del nombre del archivo, escribí la ruta completa:
+   `static/.well-known/assetlinks.json` — GitHub crea las carpetas
+   automáticamente al escribir la ruta con `/`.
+3. Pegá el contenido que te dio PWABuilder en el paso anterior, en el
+   cuadro de texto de abajo.
+4. Bajá y tocá **"Commit changes"**.
+5. Esperá a que Render termine de redesplegar (podés revisarlo en la
+   pestaña "Deploys" de tu servicio en Render).
+6. Verificá que quede accesible entrando desde el navegador a:
+   `https://tu-app.onrender.com/.well-known/assetlinks.json` — tiene que
+   mostrar el mismo contenido que pegaste, no un error 404.
 
 ### Paso 3 — Publicar en Google Play Console
 
@@ -245,15 +233,15 @@ navegador", como una app nativa de verdad:
    tienda (ícono, descripción, un par de capturas de pantalla usando la
    app desde el celular).
 3. Google Play pide obligatoriamente un enlace a una **política de
-   privacidad**. En este proyecto ya te dejé una plantilla lista en
-   `static/privacidad.html` — completá los datos entre corchetes, subila
-   junto con el resto del proyecto, y usá la URL
-   `https://tu-app.onrender.com/privacidad.html` en ese campo.
+   privacidad**. Ya tenés una lista en `static/privacidad.html` — usá la
+   URL `https://tu-app.onrender.com/privacidad.html` en ese campo.
 4. En la sección de "Producción" (o "Testing interno" para probar primero),
    subí el archivo `.aab` que generaste con PWABuilder.
 5. Completá el cuestionario de clasificación de contenido y de datos
-   (privacidad) que pide Google — como la app solo usa la cámara y envía
-   los datos por correo a quien el usuario elige, es un caso simple.
+   (privacidad) que pide Google. Como referencia: la app usa la cámara,
+   no guarda datos en ningún servidor (el PDF se genera en memoria y se
+   descarta al instante) y no comparte datos con terceros — la comparte
+   el propio usuario, desde su celular, con la app que elija.
 6. Enviá a revisión. Google suele tardar entre unas horas y un par de días
    en aprobarla.
 
@@ -264,27 +252,34 @@ nombre, y se instala como cualquier otra app.
 
 ```
 informe-instalaciones/
-├── app.py                  # Backend Flask: formulario, PDF, envío de correo
-├── contacts.json           # Contactos frecuentes y títulos sugeridos
+├── app.py                  # Backend Flask: formulario y generación del PDF
 ├── requirements.txt        # Dependencias Python
 ├── .env.example             # Plantilla de configuración (copiar a .env)
 ├── templates/
 │   └── index.html          # Formulario principal
 └── static/
     ├── style.css
-    ├── app.js               # Vista previa de fotos + registro PWA
+    ├── app.js               # Fotos dinámicas, cámara, compartir PDF, RUT
     ├── manifest.json        # Configuración de instalación como PWA
     ├── service-worker.js
+    ├── privacidad.html      # Política de privacidad (para Google Play)
     ├── icon-192.png
-    └── icon-512.png
+    ├── icon-512.png
+    └── .well-known/
+        └── assetlinks.json  # Solo necesario para publicar en Google Play
 ```
+
+`contacts.json` quedó del diseño anterior y ya no lo usa la app (se puede
+borrar del repositorio sin que afecte nada).
 
 ## Notas técnicas
 
 - El PDF se genera con `reportlab`, corrigiendo automáticamente la
   orientación de las fotos (con `Pillow`) para que no aparezcan rotadas.
-- El correo se envía con `smtplib` (librería estándar de Python), por lo que
-  no depende de ningún servicio externo de pago.
+- El PDF no se envía por correo desde el servidor: el navegador lo recibe
+  y usa la Web Share API del celular (la misma función de "Compartir" que
+  usa WhatsApp) para que el auditor lo mande con su propia app y cuenta de
+  correo. Si el celular no soporta esa función, el PDF se descarga directo.
 - No se guardan las fotos ni los PDFs en el servidor: se generan en memoria
-  y se descartan después de enviar el correo (no ocupan espacio ni quedan
+  y se descartan apenas se genera la respuesta (no ocupan espacio ni quedan
   datos sensibles guardados).
