@@ -483,7 +483,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/static/service-worker.js").catch(() => {
+    // Registrado desde la raíz (no desde /static/) para que su alcance
+    // cubra toda la app y no solo la carpeta static/.
+    navigator.serviceWorker.register("/service-worker.js").catch(() => {
       // Si falla el registro, la app sigue funcionando normalmente por navegador.
     });
   }
