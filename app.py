@@ -102,6 +102,21 @@ def assetlinks():
     )
 
 
+@app.route("/privacidad.html", methods=["GET"])
+def privacidad():
+    """
+    Sirve la política de privacidad en /privacidad.html (en vez de
+    /static/privacidad.html) para poder usar una URL más corta y prolija
+    al completar el campo de "política de privacidad" en Google Play
+    Console (ver sección 7 del README).
+    """
+    return send_from_directory(
+        os.path.join(APP_DIR, "static"),
+        "privacidad.html",
+        mimetype="text/html",
+    )
+
+
 @app.route("/", methods=["GET"])
 def index():
     return render_template(
