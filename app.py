@@ -32,7 +32,6 @@ from reportlab.lib.units import cm
 from reportlab.platypus import (
     Image as RLImage,
     KeepTogether,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
