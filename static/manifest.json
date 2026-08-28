@@ -1,8 +1,11 @@
 {
+  "id": "/",
   "name": "Informe de Auditoría",
   "short_name": "Auditoría",
+  "description": "Generá informes de auditoría fotográfica en PDF con fotos, glosas y observaciones, y compartilos por correo directo desde el celular.",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f4f6f8",
   "theme_color": "#1f6feb",
   "icons": [
