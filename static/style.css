@@ -341,3 +341,43 @@ select:disabled {
   background: #3a3a3a;
   color: white;
 }
+
+.btn-config-link {
+  display: inline-block;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.config-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1100;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.config-modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.config-modal-content h2 {
+  margin: 0 0 8px 0;
+  color: #1f6feb;
+  font-size: 1.1rem;
+}
