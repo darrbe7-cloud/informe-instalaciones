@@ -87,6 +87,19 @@ def correo_valido(correo):
     return bool(_EMAIL_REGEX.match(correo or ""))
 
 
+def parsear_correos_adicionales(texto):
+    """Separa el campo "correo adicional" en una lista de direcciones.
+
+    El técnico puede cargar uno o varios correos separados por coma (o punto
+    y coma) en el mismo campo, por ejemplo:
+    "juan@tuves.com, maria@tuves.com". Devuelve (correos_validos, correos_invalidos).
+    """
+    partes = [p.strip() for p in re.split(r"[,;]", texto or "") if p.strip()]
+    validos = [p for p in partes if correo_valido(p)]
+    invalidos = [p for p in partes if not correo_valido(p)]
+    return validos, invalidos
+
+
 def enviar_correo_informe(pdf_bytes, nombre_pdf, destinatarios, asunto, cuerpo_texto):
     """Manda el PDF adjunto por correo a `destinatarios` (lista de direcciones).
 
@@ -482,11 +495,13 @@ def generar_pdf_endpoint():
             }
         ), 400
 
-    if correo_adicional and not correo_valido(correo_adicional):
+    correos_adicionales, correos_adicionales_invalidos = parsear_correos_adicionales(correo_adicional)
+    if correos_adicionales_invalidos:
         return jsonify(
             {
-                "error": "El correo adicional guardado en tu configuración no es válido. "
-                'Tocá "⚙️ Mis datos" arriba y revisalo.'
+                "error": "El correo adicional guardado en tu configuración no es válido ("
+                + ", ".join(correos_adicionales_invalidos)
+                + "). Tocá \"⚙️ Mis datos\" arriba y revisalo."
             }
         ), 400
 
@@ -536,15 +551,16 @@ def generar_pdf_endpoint():
     nombre_pdf = f"Auditoria_Fotografica_{rut_cliente}_{fecha_archivo}.pdf".replace(" ", "")
 
     # --- Envío automático por correo -----------------------------------
-    # Siempre se manda una copia a EMAIL_DESTINO_FIJO. Si el técnico cargó un
-    # correo adicional en su configuración, también se le manda copia a él.
-    # Si el envío falla (por ejemplo, falta configurar EMAIL_ADDRESS/
-    # EMAIL_PASSWORD en el servidor), el PDF se genera y se puede compartir
-    # igual: el error se informa en una cabecera que lee el navegador, sin
-    # frenar al técnico.
+    # Siempre se manda una copia a EMAIL_DESTINO_FIJO. Si el técnico cargó uno
+    # o varios correos adicionales en su configuración (separados por coma),
+    # también se les manda copia a ellos. Si el envío falla (por ejemplo,
+    # falta configurar EMAIL_ADDRESS/EMAIL_PASSWORD en el servidor), el PDF
+    # se genera y se puede compartir igual: el error se informa en una
+    # cabecera que lee el navegador, sin frenar al técnico.
     destinatarios = [EMAIL_DESTINO_FIJO]
-    if correo_adicional and correo_adicional.lower() != EMAIL_DESTINO_FIJO.lower():
-        destinatarios.append(correo_adicional)
+    for correo in correos_adicionales:
+        if correo.lower() not in (d.lower() for d in destinatarios):
+            destinatarios.append(correo)
 
     asunto = f"Informe de Auditoría - RUT {rut_cliente} - {region or 'Sin región'}"
     cuerpo_texto = (
