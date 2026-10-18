@@ -331,14 +331,18 @@ async function generarYCompartirPdf(form, boton) {
     );
 
     // El servidor ya intentó mandar el correo automático (siempre a
-    // auditoriastuves@tuves.com, y también al correo adicional si está
-    // configurado) antes de devolver el PDF. El resultado viaja en estas
-    // cabeceras, para avisarle al técnico sin frenarlo.
+    // auditoriastuves@tuves.com, y también a los correos adicionales si
+    // están configurados) antes de devolver el PDF. El resultado viaja en
+    // estas cabeceras, para avisarle al técnico con un mensaje bien visible,
+    // sin frenarlo.
     const emailEnviado = resp.headers.get("X-Email-Enviado") === "1";
     const emailError = resp.headers.get("X-Email-Error");
+    const emailDestino = resp.headers.get("X-Email-Destino") || "auditoriastuves@tuves.com";
     const avisoCorreo = emailEnviado
-      ? " También se envió automáticamente por correo a auditoriastuves@tuves.com."
-      : " Atención: no se pudo enviar automáticamente por correo" + (emailError ? ` (${emailError}).` : ".");
+      ? `<br><strong>✅ Auditoría enviada correctamente</strong> por correo a: ${emailDestino}.`
+      : `<br><strong>⚠️ No se pudo enviar automáticamente la auditoría por correo.</strong>` +
+        (emailError ? ` Detalle: ${emailError}.` : "") +
+        " Compartí o descargá el PDF para mandarlo de forma manual.";
 
     const blob = await resp.blob();
     const archivoPdf = new File([blob], nombreArchivo, { type: "application/pdf" });
@@ -355,22 +359,22 @@ async function generarYCompartirPdf(form, boton) {
         if (err && err.name === "AbortError") {
           // El auditor cerró el menú de compartir sin elegir nada: no es un error.
           mostrarEstadoEnvio(
-            "PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras enviarlo." + avisoCorreo,
+            "PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras compartirlo." + avisoCorreo,
             emailEnviado ? "success" : "error"
           );
         } else {
           descargarComoArchivo(blob, nombreArchivo);
           mostrarEstadoEnvio(
-            "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente desde tu app de correo." + avisoCorreo,
-            "error"
+            "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente si hace falta." + avisoCorreo,
+            emailEnviado ? "success" : "error"
           );
         }
       }
     } else {
       descargarComoArchivo(blob, nombreArchivo);
       mostrarEstadoEnvio(
-        "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente desde tu app de correo." + avisoCorreo,
-        "error"
+        "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente si hace falta." + avisoCorreo,
+        emailEnviado ? "success" : "error"
       );
     }
   } catch (err) {
