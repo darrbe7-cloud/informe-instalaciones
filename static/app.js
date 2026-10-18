@@ -329,6 +329,17 @@ async function generarYCompartirPdf(form, boton) {
       resp.headers.get("Content-Disposition"),
       "Informe_Auditoria.pdf"
     );
+
+    // El servidor ya intentó mandar el correo automático (siempre a
+    // auditoriastuves@tuves.com, y también al correo adicional si está
+    // configurado) antes de devolver el PDF. El resultado viaja en estas
+    // cabeceras, para avisarle al técnico sin frenarlo.
+    const emailEnviado = resp.headers.get("X-Email-Enviado") === "1";
+    const emailError = resp.headers.get("X-Email-Error");
+    const avisoCorreo = emailEnviado
+      ? " También se envió automáticamente por correo a auditoriastuves@tuves.com."
+      : " Atención: no se pudo enviar automáticamente por correo" + (emailError ? ` (${emailError}).` : ".");
+
     const blob = await resp.blob();
     const archivoPdf = new File([blob], nombreArchivo, { type: "application/pdf" });
 
@@ -339,15 +350,18 @@ async function generarYCompartirPdf(form, boton) {
           title: "Informe de Auditoría",
           text: "Se adjunta el informe de auditoría generado desde la app.",
         });
-        mostrarEstadoEnvio("PDF generado. Elegí la app de correo para enviarlo.", "success");
+        mostrarEstadoEnvio("PDF generado. Elegí la app de correo para enviarlo." + avisoCorreo, emailEnviado ? "success" : "error");
       } catch (err) {
         if (err && err.name === "AbortError") {
           // El auditor cerró el menú de compartir sin elegir nada: no es un error.
-          mostrarEstadoEnvio("PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras enviarlo.", "success");
+          mostrarEstadoEnvio(
+            "PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras enviarlo." + avisoCorreo,
+            emailEnviado ? "success" : "error"
+          );
         } else {
           descargarComoArchivo(blob, nombreArchivo);
           mostrarEstadoEnvio(
-            "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente desde tu app de correo.",
+            "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente desde tu app de correo." + avisoCorreo,
             "error"
           );
         }
@@ -355,7 +369,7 @@ async function generarYCompartirPdf(form, boton) {
     } else {
       descargarComoArchivo(blob, nombreArchivo);
       mostrarEstadoEnvio(
-        "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente desde tu app de correo.",
+        "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente desde tu app de correo." + avisoCorreo,
         "error"
       );
     }
@@ -364,6 +378,125 @@ async function generarYCompartirPdf(form, boton) {
   } finally {
     boton.disabled = false;
     boton.textContent = "Generar PDF y compartir";
+  }
+}
+
+// --- Configuración guardada del técnico/empresa (una sola vez por celular) -
+// Se guarda en localStorage del celular, no en el servidor: cada auditor ve
+// solo sus propios datos guardados en su propio teléfono. Si el navegador
+// bloquea localStorage (por ejemplo en una ventana privada muy estricta),
+// la app sigue funcionando igual, solo que hay que volver a completar los
+// datos cada vez.
+const CONFIG_STORAGE_KEY = "auditoria_config_v1";
+
+function cargarConfigGuardada() {
+  try {
+    const guardado = localStorage.getItem(CONFIG_STORAGE_KEY);
+    return guardado ? JSON.parse(guardado) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function guardarConfig(config) {
+  try {
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+  } catch (err) {
+    // Si no se puede guardar, igual se aplica al formulario para esta sesión.
+  }
+}
+
+function aplicarConfigAlFormulario(config) {
+  const mapaCampos = {
+    empresa: "empresa",
+    tecnico: "tecnico",
+    rut_tecnico: "rut_tecnico",
+    correo_adicional: "correo_adicional",
+  };
+  Object.keys(mapaCampos).forEach((clave) => {
+    const input = document.getElementById(mapaCampos[clave]);
+    if (input) input.value = (config && config[clave]) || "";
+  });
+}
+
+function abrirConfigModal() {
+  const modal = document.getElementById("config-modal");
+  if (!modal) return;
+
+  const config = cargarConfigGuardada() || {};
+  const campoEmpresa = document.getElementById("config_empresa");
+  const campoTecnico = document.getElementById("config_tecnico");
+  const campoRut = document.getElementById("config_rut_tecnico");
+  const campoCorreo = document.getElementById("config_correo_adicional");
+
+  if (campoEmpresa) campoEmpresa.value = config.empresa || "";
+  if (campoTecnico) campoTecnico.value = config.tecnico || "";
+  if (campoRut) campoRut.value = config.rut_tecnico || "";
+  if (campoCorreo) campoCorreo.value = config.correo_adicional || "";
+
+  modal.style.display = "flex";
+}
+
+function cerrarConfigModal() {
+  const modal = document.getElementById("config-modal");
+  if (modal) modal.style.display = "none";
+}
+
+function correoValido(correo) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
+}
+
+function inicializarConfig() {
+  const btnAbrir = document.getElementById("btn-abrir-config");
+  const btnGuardar = document.getElementById("btn-guardar-config");
+  const campoRut = document.getElementById("config_rut_tecnico");
+  const errorRut = document.getElementById("config-rut-error");
+
+  if (btnAbrir) {
+    btnAbrir.addEventListener("click", abrirConfigModal);
+  }
+
+  if (btnGuardar) {
+    btnGuardar.addEventListener("click", () => {
+      const empresa = document.getElementById("config_empresa").value.trim();
+      const tecnico = document.getElementById("config_tecnico").value.trim();
+      const rutTecnico = document.getElementById("config_rut_tecnico").value.trim();
+      const correoAdicional = document.getElementById("config_correo_adicional").value.trim();
+
+      if (!empresa || !tecnico || !rutTecnico) {
+        alert("Completá al menos el nombre de la empresa, tu nombre y tu RUT para poder continuar.");
+        return;
+      }
+
+      if (!rutValido(rutTecnico)) {
+        if (campoRut) campoRut.classList.add("input-error");
+        if (errorRut) errorRut.style.display = "block";
+        alert("Revisá el RUT del técnico: el dígito verificador no es válido.");
+        return;
+      }
+      if (campoRut) campoRut.classList.remove("input-error");
+      if (errorRut) errorRut.style.display = "none";
+
+      if (correoAdicional && !correoValido(correoAdicional)) {
+        alert("Revisá el correo adicional, no parece una dirección válida.");
+        return;
+      }
+
+      const config = { empresa, tecnico, rut_tecnico: rutTecnico, correo_adicional: correoAdicional };
+      guardarConfig(config);
+      aplicarConfigAlFormulario(config);
+      cerrarConfigModal();
+    });
+  }
+
+  // Si ya hay datos guardados de una vez anterior, se aplican solos. Si no
+  // hay nada guardado todavía (primera vez que se abre la app en este
+  // celular), se abre la configuración automáticamente.
+  const configGuardada = cargarConfigGuardada();
+  if (configGuardada) {
+    aplicarConfigAlFormulario(configGuardada);
+  } else {
+    abrirConfigModal();
   }
 }
 
@@ -401,6 +534,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   inicializarRegionComuna();
   inicializarFotos();
+  inicializarConfig();
 
   const btnCancelar = document.getElementById("camera-cancel");
   const btnCapturar = document.getElementById("camera-capture");
@@ -434,6 +568,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+
+    const campoTecnico = document.getElementById("tecnico");
+    if (!campoTecnico || !campoTecnico.value.trim()) {
+      alert('Antes de generar el informe, completá tus datos (empresa, nombre y RUT) tocando "⚙️ Mis datos" arriba.');
+      abrirConfigModal();
+      return;
+    }
+
+    const tipoActividad = document.getElementById("tipo_actividad");
+    if (tipoActividad && !tipoActividad.value) {
+      alert("Elegí el tipo de actividad antes de generar el informe.");
+      tipoActividad.focus();
+      return;
+    }
 
     if (rutInput && !rutValido(rutInput.value)) {
       event.preventDefault();
