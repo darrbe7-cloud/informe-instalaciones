@@ -19,7 +19,9 @@ en la consola, por ejemplo: http://192.168.1.5:5000
 import io
 import os
 import re
+import smtplib
 from datetime import datetime
+from email.message import EmailMessage
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
@@ -53,6 +55,64 @@ MAX_FOTOS = 8
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cambia-esto-en-produccion")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB por envío
+
+# --- Envío automático de correo con cada informe generado ------------------
+# El servidor manda SIEMPRE una copia del PDF a EMAIL_DESTINO_FIJO, usando la
+# cuenta EMAIL_ADDRESS/EMAIL_PASSWORD (contraseña de aplicación, no la
+# contraseña normal). Si además el técnico cargó un "correo adicional" en su
+# configuración guardada en el celular, también se le manda copia a esa
+# dirección. Ver .env.example para la lista completa de variables.
+EMAIL_ADDRESS = os.environ.get("EMAIL_ADDRESS", "").strip()
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD", "").strip()
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or "587")
+EMAIL_DISPLAY_NAME = os.environ.get("EMAIL_DISPLAY_NAME", "Informes de Auditoría").strip()
+EMAIL_DESTINO_FIJO = os.environ.get("EMAIL_DESTINO_FIJO", "auditoriastuves@tuves.com").strip()
+
+# Opciones válidas para el desplegable "Tipo de actividad" del formulario.
+# Si cambiás esta lista, actualizá también el <select> en templates/index.html.
+TIPOS_ACTIVIDAD = [
+    "Instalación",
+    "Reparación",
+    "Boca adicional",
+    "Traslados",
+    "Reconexión",
+    "Modificación de instalación",
+]
+
+_EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def correo_valido(correo):
+    return bool(_EMAIL_REGEX.match(correo or ""))
+
+
+def enviar_correo_informe(pdf_bytes, nombre_pdf, destinatarios, asunto, cuerpo_texto):
+    """Manda el PDF adjunto por correo a `destinatarios` (lista de direcciones).
+
+    Devuelve una tupla (ok, error): `ok` es True/False, y `error` trae el
+    detalle en texto si algo falló (para poder mostrárselo al técnico sin
+    que la generación del PDF se vea afectada: el informe se genera y se
+    puede compartir igual aunque el envío automático falle).
+    """
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        return False, "El servidor no tiene configurado el envío de correos (faltan EMAIL_ADDRESS / EMAIL_PASSWORD)."
+
+    mensaje = EmailMessage()
+    mensaje["Subject"] = asunto
+    mensaje["From"] = f"{EMAIL_DISPLAY_NAME} <{EMAIL_ADDRESS}>"
+    mensaje["To"] = ", ".join(destinatarios)
+    mensaje.set_content(cuerpo_texto)
+    mensaje.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=nombre_pdf)
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=20) as servidor:
+            servidor.starttls()
+            servidor.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            servidor.send_message(mensaje)
+        return True, None
+    except Exception as exc:  # noqa: BLE001 - queremos capturar cualquier falla de SMTP
+        return False, str(exc)
 
 
 def _limpiar_rut(rut):
@@ -155,7 +215,19 @@ def preparar_imagen(file_storage):
     return buffer, imagen.size
 
 
-def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos, observacion):
+def generar_pdf(
+    tecnico,
+    rut_tecnico,
+    empresa,
+    tipo_actividad,
+    cliente,
+    rut_cliente,
+    direccion,
+    comuna,
+    region,
+    fotos,
+    observacion,
+):
     """Arma el PDF del informe en memoria y devuelve los bytes.
 
     `fotos` es una lista de tuplas (glosa, foto_buffer, tam_original) — una
@@ -264,7 +336,10 @@ def generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos,
         if valor:
             filas_cliente.append([Paragraph(etiqueta, etiqueta_style), Paragraph(valor, valor_style)])
 
-    _agregar_fila("Auditor", tecnico)
+    _agregar_fila("Empresa", empresa)
+    _agregar_fila("Técnico", tecnico)
+    _agregar_fila("RUT técnico", rut_tecnico)
+    _agregar_fila("Tipo de actividad", tipo_actividad)
     _agregar_fila("Cliente", cliente)
     _agregar_fila("RUT cliente", rut_cliente)
     _agregar_fila("Dirección", direccion)
@@ -371,6 +446,10 @@ def generar_pdf_endpoint():
     devuelve un JSON con "error" y código 400 en vez de generar el PDF.
     """
     tecnico = request.form.get("tecnico", "").strip()
+    rut_tecnico = request.form.get("rut_tecnico", "").strip()
+    empresa = request.form.get("empresa", "").strip()
+    tipo_actividad = request.form.get("tipo_actividad", "").strip()
+    correo_adicional = request.form.get("correo_adicional", "").strip()
     cliente = request.form.get("cliente", "").strip()
     rut_cliente = request.form.get("rut_cliente", "").strip()
     direccion = request.form.get("direccion", "").strip()
@@ -386,6 +465,28 @@ def generar_pdf_endpoint():
             {
                 "error": "El RUT del cliente no es válido. Revisá que esté bien escrito, "
                 "incluyendo el dígito verificador (ej: 12.345.678-5)."
+            }
+        ), 400
+
+    if not tipo_actividad:
+        return jsonify({"error": "Tenés que elegir el tipo de actividad."}), 400
+
+    if tipo_actividad not in TIPOS_ACTIVIDAD:
+        return jsonify({"error": "El tipo de actividad elegido no es válido."}), 400
+
+    if rut_tecnico and not rut_valido(rut_tecnico):
+        return jsonify(
+            {
+                "error": "El RUT del técnico guardado en tu configuración no es válido. "
+                'Tocá "⚙️ Mis datos" arriba y revisalo.'
+            }
+        ), 400
+
+    if correo_adicional and not correo_valido(correo_adicional):
+        return jsonify(
+            {
+                "error": "El correo adicional guardado en tu configuración no es válido. "
+                'Tocá "⚙️ Mis datos" arriba y revisalo.'
             }
         ), 400
 
@@ -417,17 +518,58 @@ def generar_pdf_endpoint():
     if not fotos:
         return jsonify({"error": "Agregá al menos una foto a la auditoría antes de generar el PDF."}), 400
 
-    pdf_bytes = generar_pdf(tecnico, cliente, rut_cliente, direccion, comuna, region, fotos, observacion)
+    pdf_bytes = generar_pdf(
+        tecnico,
+        rut_tecnico,
+        empresa,
+        tipo_actividad,
+        cliente,
+        rut_cliente,
+        direccion,
+        comuna,
+        region,
+        fotos,
+        observacion,
+    )
 
     fecha_archivo = datetime.now().strftime("%Y%m%d_%H%M")
     nombre_pdf = f"Auditoria_Fotografica_{rut_cliente}_{fecha_archivo}.pdf".replace(" ", "")
 
-    return send_file(
+    # --- Envío automático por correo -----------------------------------
+    # Siempre se manda una copia a EMAIL_DESTINO_FIJO. Si el técnico cargó un
+    # correo adicional en su configuración, también se le manda copia a él.
+    # Si el envío falla (por ejemplo, falta configurar EMAIL_ADDRESS/
+    # EMAIL_PASSWORD en el servidor), el PDF se genera y se puede compartir
+    # igual: el error se informa en una cabecera que lee el navegador, sin
+    # frenar al técnico.
+    destinatarios = [EMAIL_DESTINO_FIJO]
+    if correo_adicional and correo_adicional.lower() != EMAIL_DESTINO_FIJO.lower():
+        destinatarios.append(correo_adicional)
+
+    asunto = f"Informe de Auditoría - RUT {rut_cliente} - {region or 'Sin región'}"
+    cuerpo_texto = (
+        "Se adjunta el informe de auditoría generado desde la app.\n\n"
+        f"Empresa: {empresa or '-'}\n"
+        f"Técnico: {tecnico or '-'} (RUT {rut_tecnico or '-'})\n"
+        f"Tipo de actividad: {tipo_actividad}\n\n"
+        f"Cliente: {cliente or '-'}\n"
+        f"RUT cliente: {rut_cliente}\n"
+        f"Dirección: {direccion or '-'}, {comuna or '-'}, {region or '-'}\n"
+    )
+
+    email_ok, email_error = enviar_correo_informe(pdf_bytes, nombre_pdf, destinatarios, asunto, cuerpo_texto)
+
+    respuesta = send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
         download_name=nombre_pdf,
     )
+    respuesta.headers["X-Email-Enviado"] = "1" if email_ok else "0"
+    respuesta.headers["X-Email-Destino"] = ", ".join(destinatarios)
+    if email_error:
+        respuesta.headers["X-Email-Error"] = email_error.replace("\n", " ").replace("\r", " ")[:300]
+    return respuesta
 
 
 if __name__ == "__main__":
