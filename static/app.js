@@ -446,6 +446,16 @@ function correoValido(correo) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo);
 }
 
+// Valida el campo "correo adicional", que puede tener uno o varios
+// correos escritos juntos separados por coma (o punto y coma). Devuelve
+// la lista de correos que no son válidos (vacía si todos están bien).
+function correosAdicionalesInvalidos(texto) {
+  return (texto || "")
+    .split(/[,;]/)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0 && !correoValido(c));
+}
+
 function inicializarConfig() {
   const btnAbrir = document.getElementById("btn-abrir-config");
   const btnGuardar = document.getElementById("btn-guardar-config");
@@ -477,8 +487,11 @@ function inicializarConfig() {
       if (campoRut) campoRut.classList.remove("input-error");
       if (errorRut) errorRut.style.display = "none";
 
-      if (correoAdicional && !correoValido(correoAdicional)) {
-        alert("Revisá el correo adicional, no parece una dirección válida.");
+      const invalidos = correosAdicionalesInvalidos(correoAdicional);
+      if (invalidos.length > 0) {
+        alert(
+          "Revisá el correo adicional, no parece una dirección válida: " + invalidos.join(", ")
+        );
         return;
       }
 
