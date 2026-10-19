@@ -87,6 +87,24 @@ def correo_valido(correo):
     return bool(_EMAIL_REGEX.match(correo or ""))
 
 
+_TRADUCTOR_SIN_TILDES = str.maketrans("áéíóúÁÉÍÓÚñÑ", "aeiouAEIOUnN")
+
+
+def nombre_archivo_desde_texto(texto, sufijo=""):
+    """Convierte un texto (por ejemplo, el mismo asunto del correo) en un
+    nombre de archivo seguro para cualquier celular/computador: sin tildes,
+    sin caracteres especiales y con espacios reemplazados por guion bajo.
+    `sufijo` se agrega al final (antes de ".pdf") para evitar que dos
+    informes del mismo cliente/región se pisen si se descargan el mismo día.
+    """
+    limpio = (texto or "").translate(_TRADUCTOR_SIN_TILDES)
+    limpio = re.sub(r"[^A-Za-z0-9\-_ ]", "", limpio)
+    limpio = re.sub(r"\s+", "_", limpio.strip())
+    if sufijo:
+        limpio = f"{limpio}_{sufijo}"
+    return f"{limpio}.pdf"
+
+
 def parsear_correos_adicionales(texto):
     """Separa el campo "correo adicional" en una lista de direcciones.
 
@@ -547,8 +565,14 @@ def generar_pdf_endpoint():
         observacion,
     )
 
+    # El asunto del correo y el nombre del PDF descargado usan el mismo
+    # formato (RUT del cliente + región), para que sea fácil relacionar un
+    # archivo con el correo correspondiente. Se le agrega fecha y hora al
+    # nombre del archivo para que dos informes del mismo cliente/región no
+    # se pisen entre sí si se descargan el mismo día.
+    asunto = f"Informe de Auditoría - RUT {rut_cliente} - {region or 'Sin región'}"
     fecha_archivo = datetime.now().strftime("%Y%m%d_%H%M")
-    nombre_pdf = f"Auditoria_Fotografica_{rut_cliente}_{fecha_archivo}.pdf".replace(" ", "")
+    nombre_pdf = nombre_archivo_desde_texto(asunto, sufijo=fecha_archivo)
 
     # --- Envío automático por correo -----------------------------------
     # Siempre se manda una copia a EMAIL_DESTINO_FIJO. Si el técnico cargó uno
@@ -562,7 +586,6 @@ def generar_pdf_endpoint():
         if correo.lower() not in (d.lower() for d in destinatarios):
             destinatarios.append(correo)
 
-    asunto = f"Informe de Auditoría - RUT {rut_cliente} - {region or 'Sin región'}"
     cuerpo_texto = (
         "Se adjunta el informe de auditoría generado desde la app.\n\n"
         f"Empresa: {empresa or '-'}\n"
