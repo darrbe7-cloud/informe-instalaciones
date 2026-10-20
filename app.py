@@ -2,7 +2,7 @@
 Informe de Auditoría - App web (PWA) en Python
 --------------------------------------------------
 Permite completar los datos del cliente (RUT, dirección, comuna, región),
-sacar hasta 8 fotos de la auditoría (cada una con su propia glosa que indica
+sacar hasta 10 fotos de la auditoría (cada una con su propia glosa que indica
 a qué corresponde), agregar un informe final para cerrar la auditoría, y
 generar un PDF que se comparte usando el menú nativo de "Compartir" del
 celular (Gmail, Outlook, WhatsApp, etc.), para que cada auditor lo mande
@@ -50,11 +50,11 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 # su glosa (descripción de a qué corresponde) como glosa_1, glosa_2, ...
 # Si cambiás este número, también hay que actualizarlo en static/app.js
 # (constante MAX_FOTOS) y en el texto de ayuda de templates/index.html.
-MAX_FOTOS = 8
+MAX_FOTOS = 10
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "cambia-esto-en-produccion")
-app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB por envío
+app.config["MAX_CONTENT_LENGTH"] = 35 * 1024 * 1024  # 35 MB por envío (hasta MAX_FOTOS fotos)
 
 # --- Envío automático de correo con cada informe generado ------------------
 # El servidor manda SIEMPRE una copia del PDF a EMAIL_DESTINO_FIJO, usando la
