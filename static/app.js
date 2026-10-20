@@ -75,7 +75,7 @@ function inicializarRegionComuna() {
 // una foto, así el backend siempre puede leerlos como foto_1..foto_N.
 //
 // IMPORTANTE: este número tiene que coincidir con MAX_FOTOS en app.py.
-const MAX_FOTOS = 8;
+const MAX_FOTOS = 10;
 
 let contadorSlotId = 0;
 
@@ -212,8 +212,17 @@ async function abrirCamara(inputEl, previewEl, titulo) {
   if (tituloEl) tituloEl.textContent = titulo || "";
 
   try {
+    // Se limita la resolución de captura (Full HD) para que cada foto pese
+    // poco sin importar qué tan buena sea la cámara del celular: así el
+    // conjunto de hasta MAX_FOTOS fotos de una auditoría queda bien lejos
+    // del límite de tamaño que acepta el servidor (MAX_CONTENT_LENGTH en
+    // app.py). No afecta la nitidez de forma perceptible en el PDF.
     camaraStreamActual = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+      },
       audio: false,
     });
   } catch (err) {
