@@ -256,10 +256,15 @@ def generar_pdf(
     direccion,
     comuna,
     region,
+    ubicacion_gps,
     fotos,
     observacion,
 ):
     """Arma el PDF del informe en memoria y devuelve los bytes.
+
+    `ubicacion_gps` es `None`, o una tupla `(latitud, longitud)` cuando el
+    celular logró obtener la ubicación automáticamente (ver
+    "Ubicación GPS (automática, opcional)" más abajo).
 
     `fotos` es una lista de tuplas (glosa, foto_buffer, tam_original) — una
     por cada foto que el técnico agregó (hasta MAX_FOTOS), en el orden en
@@ -377,6 +382,14 @@ def generar_pdf(
     _agregar_fila("Comuna", comuna)
     _agregar_fila("Región", region)
 
+    if ubicacion_gps:
+        lat, lng = ubicacion_gps
+        mapa_url = f"https://maps.google.com/?q={lat:.6f},{lng:.6f}"
+        _agregar_fila(
+            "Ubicación GPS",
+            f'<link href="{mapa_url}" color="#1f6feb"><u>{lat:.6f}, {lng:.6f} (ver en el mapa)</u></link>',
+        )
+
     if filas_cliente:
         filas = [[Paragraph("DATOS DEL CLIENTE", ficha_header_style), ""]] + filas_cliente
         ficha = Table(filas, colWidths=[4.5 * cm, ANCHO_CONTENIDO - 4.5 * cm])
@@ -487,6 +500,23 @@ def generar_pdf_endpoint():
     comuna = request.form.get("comuna", "").strip()
     region = request.form.get("region", "").strip()
     observacion = request.form.get("observacion", "").strip()
+    ubicacion_lat_raw = request.form.get("ubicacion_lat", "").strip()
+    ubicacion_lng_raw = request.form.get("ubicacion_lng", "").strip()
+
+    # La ubicación GPS es automática y opcional (ver inicializarUbicacion en
+    # app.js): el celular intenta obtenerla solo, pero si no la consigue
+    # (sin señal, permiso denegado, etc.) el informe se genera igual, sin
+    # coordenadas. Por eso acá nunca se devuelve un error por esto: si el
+    # valor que llega no es un número válido, simplemente se ignora.
+    ubicacion_gps = None
+    try:
+        if ubicacion_lat_raw and ubicacion_lng_raw:
+            lat = float(ubicacion_lat_raw)
+            lng = float(ubicacion_lng_raw)
+            if -90 <= lat <= 90 and -180 <= lng <= 180:
+                ubicacion_gps = (lat, lng)
+    except ValueError:
+        ubicacion_gps = None
 
     if not rut_cliente:
         return jsonify({"error": "Tenés que completar el RUT del cliente."}), 400
@@ -561,6 +591,7 @@ def generar_pdf_endpoint():
         direccion,
         comuna,
         region,
+        ubicacion_gps,
         fotos,
         observacion,
     )
@@ -595,6 +626,9 @@ def generar_pdf_endpoint():
         f"RUT cliente: {rut_cliente}\n"
         f"Dirección: {direccion or '-'}, {comuna or '-'}, {region or '-'}\n"
     )
+    if ubicacion_gps:
+        lat, lng = ubicacion_gps
+        cuerpo_texto += f"Ubicación GPS: https://maps.google.com/?q={lat:.6f},{lng:.6f}\n"
 
     email_ok, email_error = enviar_correo_informe(pdf_bytes, nombre_pdf, destinatarios, asunto, cuerpo_texto)
 
