@@ -280,10 +280,14 @@ function capturarFoto() {
 // --- Compartir el PDF generado ---------------------------------------------
 // En vez de mandar el correo desde el servidor con una cuenta fija, la app
 // genera el PDF y se lo entrega al celular usando la Web Share API (la
-// misma función que usa "Compartir" en WhatsApp o Instagram). El propio
-// auditor elige con qué app mandarlo (Gmail, Outlook, etc.), usando su
-// propia cuenta de correo ya configurada en el celular. Si el navegador no
-// soporta compartir archivos, el PDF se descarga para adjuntarlo a mano.
+// misma función que usa "Compartir" en WhatsApp, Telegram o Instagram). El
+// propio auditor elige con qué app mandarlo (WhatsApp, Telegram, Gmail,
+// Outlook, etc.), usando sus propias cuentas ya configuradas en el celular.
+// Si el navegador no soporta compartir archivos, el PDF se descarga para
+// adjuntarlo a mano. Además, siempre se manda una copia automática por
+// correo desde el servidor (ver app.py).
+
+const URL_GENERAR_PDF = "/generar-pdf";
 
 function mostrarEstadoEnvio(mensaje, tipo) {
   let contenedor = document.getElementById("estado-envio");
@@ -315,83 +319,417 @@ function nombreDesdeContentDisposition(disposition, porDefecto) {
   return match ? decodeURIComponent(match[1]) : porDefecto;
 }
 
+// Hace el pedido al servidor y devuelve los datos del PDF ya generado. Si el
+// `fetch` ni siquiera llega a completarse (sin conexión a internet), lanza
+// un error marcado con `esErrorDeRed = true`, para poder distinguirlo de un
+// error de validación real (RUT inválido, falta una glosa, etc.).
+async function enviarAlServidor(formData) {
+  let resp;
+  try {
+    resp = await fetch(URL_GENERAR_PDF, { method: "POST", body: formData });
+  } catch (errorRed) {
+    const error = new Error("Sin conexión a internet.");
+    error.esErrorDeRed = true;
+    throw error;
+  }
+
+  if (!resp.ok) {
+    let mensajeError = "No se pudo generar el PDF.";
+    try {
+      const data = await resp.json();
+      if (data && data.error) mensajeError = data.error;
+    } catch (err) {
+      // si la respuesta de error no viene en JSON, se usa el mensaje genérico
+    }
+    const error = new Error(mensajeError);
+    error.esErrorDeRed = false;
+    throw error;
+  }
+
+  const nombreArchivo = nombreDesdeContentDisposition(
+    resp.headers.get("Content-Disposition"),
+    "Informe_Auditoria.pdf"
+  );
+
+  // El servidor ya intentó mandar el correo automático (siempre a
+  // auditoriastuves@tuves.com, y también a los correos adicionales si están
+  // configurados) antes de devolver el PDF. El resultado viaja en estas
+  // cabeceras, para avisarle al técnico con un mensaje bien visible.
+  const emailEnviado = resp.headers.get("X-Email-Enviado") === "1";
+  const emailError = resp.headers.get("X-Email-Error");
+  const emailDestino = resp.headers.get("X-Email-Destino") || "auditoriastuves@tuves.com";
+  const blob = await resp.blob();
+
+  return { blob, nombreArchivo, emailEnviado, emailError, emailDestino };
+}
+
+// Abre el menú nativo de "Compartir" (WhatsApp, Telegram, Gmail, etc.) con
+// el PDF ya generado. Solo se puede llamar justo después de un toque del
+// técnico (por eso no se usa en los reintentos automáticos en segundo
+// plano: el navegador no deja abrir ese menú si no es en respuesta directa
+// a una acción de la persona).
+async function compartirPdfGenerado({ blob, nombreArchivo, emailEnviado, emailError, emailDestino }) {
+  const avisoCorreo = emailEnviado
+    ? `<br><strong>✅ Auditoría enviada correctamente</strong> por correo a: ${emailDestino}.`
+    : `<br><strong>⚠️ No se pudo enviar automáticamente la auditoría por correo.</strong>` +
+      (emailError ? ` Detalle: ${emailError}.` : "") +
+      " Compartí o descargá el PDF para mandarlo de forma manual.";
+
+  const archivoPdf = new File([blob], nombreArchivo, { type: "application/pdf" });
+
+  if (navigator.canShare && navigator.canShare({ files: [archivoPdf] })) {
+    try {
+      await navigator.share({
+        files: [archivoPdf],
+        title: "Informe de Auditoría",
+        text: "Se adjunta el informe de auditoría generado desde la app.",
+      });
+      mostrarEstadoEnvio(
+        "PDF generado. Elegí la app (WhatsApp, Telegram, Gmail, etc.) para enviarlo." + avisoCorreo,
+        emailEnviado ? "success" : "error"
+      );
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        // El auditor cerró el menú de compartir sin elegir nada: no es un error.
+        mostrarEstadoEnvio(
+          "PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras compartirlo." + avisoCorreo,
+          emailEnviado ? "success" : "error"
+        );
+      } else {
+        descargarComoArchivo(blob, nombreArchivo);
+        mostrarEstadoEnvio(
+          "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente si hace falta." + avisoCorreo,
+          emailEnviado ? "success" : "error"
+        );
+      }
+    }
+  } else {
+    descargarComoArchivo(blob, nombreArchivo);
+    mostrarEstadoEnvio(
+      "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente si hace falta." + avisoCorreo,
+      emailEnviado ? "success" : "error"
+    );
+  }
+}
+
+function resumenDesdeFormulario(form) {
+  const campoRut = form.querySelector("#rut_cliente");
+  const campoRegion = form.querySelector("#region");
+  const campoCliente = form.querySelector("#cliente");
+  const rut = (campoRut && campoRut.value.trim()) || "sin RUT";
+  const region = (campoRegion && campoRegion.value.trim()) || "sin región";
+  const cliente = (campoCliente && campoCliente.value.trim()) || "";
+  return `RUT ${rut} - ${region}` + (cliente ? ` - ${cliente}` : "");
+}
+
 async function generarYCompartirPdf(form, boton) {
   boton.disabled = true;
   boton.textContent = "Generando PDF...";
 
+  const formData = new FormData(form);
+
   try {
-    const formData = new FormData(form);
-    const resp = await fetch(form.action, { method: "POST", body: formData });
-
-    if (!resp.ok) {
-      let mensajeError = "No se pudo generar el PDF.";
+    const resultado = await enviarAlServidor(formData);
+    await compartirPdfGenerado(resultado);
+  } catch (err) {
+    if (err && err.esErrorDeRed) {
+      // Sin conexión: se guarda el informe completo (todos los datos y las
+      // fotos ya sacadas) en este celular, para mandarlo solo, automática-
+      // mente, apenas vuelva a haber señal. El técnico no tiene que volver
+      // a sacar fotos ni a completar nada de nuevo (ver "Informes
+      // pendientes" más abajo).
       try {
-        const data = await resp.json();
-        if (data && data.error) mensajeError = data.error;
-      } catch (err) {
-        // si la respuesta de error no viene en JSON, se usa el mensaje genérico
-      }
-      throw new Error(mensajeError);
-    }
-
-    const nombreArchivo = nombreDesdeContentDisposition(
-      resp.headers.get("Content-Disposition"),
-      "Informe_Auditoria.pdf"
-    );
-
-    // El servidor ya intentó mandar el correo automático (siempre a
-    // auditoriastuves@tuves.com, y también a los correos adicionales si
-    // están configurados) antes de devolver el PDF. El resultado viaja en
-    // estas cabeceras, para avisarle al técnico con un mensaje bien visible,
-    // sin frenarlo.
-    const emailEnviado = resp.headers.get("X-Email-Enviado") === "1";
-    const emailError = resp.headers.get("X-Email-Error");
-    const emailDestino = resp.headers.get("X-Email-Destino") || "auditoriastuves@tuves.com";
-    const avisoCorreo = emailEnviado
-      ? `<br><strong>✅ Auditoría enviada correctamente</strong> por correo a: ${emailDestino}.`
-      : `<br><strong>⚠️ No se pudo enviar automáticamente la auditoría por correo.</strong>` +
-        (emailError ? ` Detalle: ${emailError}.` : "") +
-        " Compartí o descargá el PDF para mandarlo de forma manual.";
-
-    const blob = await resp.blob();
-    const archivoPdf = new File([blob], nombreArchivo, { type: "application/pdf" });
-
-    if (navigator.canShare && navigator.canShare({ files: [archivoPdf] })) {
-      try {
-        await navigator.share({
-          files: [archivoPdf],
-          title: "Informe de Auditoría",
-          text: "Se adjunta el informe de auditoría generado desde la app.",
-        });
-        mostrarEstadoEnvio("PDF generado. Elegí la app de correo para enviarlo." + avisoCorreo, emailEnviado ? "success" : "error");
-      } catch (err) {
-        if (err && err.name === "AbortError") {
-          // El auditor cerró el menú de compartir sin elegir nada: no es un error.
-          mostrarEstadoEnvio(
-            "PDF generado. Tocá \"Generar PDF y compartir\" de nuevo cuando quieras compartirlo." + avisoCorreo,
-            emailEnviado ? "success" : "error"
-          );
-        } else {
-          descargarComoArchivo(blob, nombreArchivo);
-          mostrarEstadoEnvio(
-            "No se pudo abrir el menú para compartir. El PDF se descargó: adjuntalo manualmente si hace falta." + avisoCorreo,
-            emailEnviado ? "success" : "error"
-          );
-        }
+        await guardarInformePendiente(formData, resumenDesdeFormulario(form));
+        mostrarEstadoEnvio(
+          "📥 Sin conexión a internet: el informe se guardó en este celular y se va a enviar automáticamente apenas tengas señal. No hace falta sacar las fotos de nuevo ni volver a completar el formulario.",
+          "error"
+        );
+        actualizarPanelPendientes();
+      } catch (errorGuardado) {
+        mostrarEstadoEnvio(
+          "Sin conexión a internet, y no se pudo guardar el informe como pendiente en este celular. Probá de nuevo cuando tengas señal.",
+          "error"
+        );
       }
     } else {
-      descargarComoArchivo(blob, nombreArchivo);
-      mostrarEstadoEnvio(
-        "Este navegador no permite compartir directamente. El PDF se descargó: adjuntalo manualmente si hace falta." + avisoCorreo,
-        emailEnviado ? "success" : "error"
-      );
+      mostrarEstadoEnvio(err.message || "No se pudo generar el PDF.", "error");
     }
-  } catch (err) {
-    mostrarEstadoEnvio(err.message || "No se pudo generar el PDF.", "error");
   } finally {
     boton.disabled = false;
     boton.textContent = "Generar PDF y compartir";
   }
+}
+
+// --- Informes pendientes de enviar (sin conexión) ---------------------------
+// Si no hay internet en el momento de generar el informe, se guarda acá —en
+// IndexedDB, una base de datos dentro del propio navegador/celular— con
+// todos sus datos y fotos. La app reintenta mandarlos solo en cuanto detecta
+// conexión (evento "online"), al volver a abrir la página, y cada cierto
+// tiempo mientras está abierta, como respaldo (el evento "online" no
+// siempre es confiable en celulares). Una vez que un informe pendiente se
+// manda con éxito, el correo automático ya sale solo; además queda
+// disponible un botón "Compartir" para mandarlo también por WhatsApp,
+// Telegram, etc. cuando el técnico quiera (eso sí requiere un toque suyo).
+const PENDIENTES_DB_NOMBRE = "auditoria_pendientes_db";
+const PENDIENTES_DB_VERSION = 1;
+const PENDIENTES_STORE = "pendientes";
+
+function abrirPendientesDB() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB no disponible en este navegador."));
+      return;
+    }
+    const peticion = indexedDB.open(PENDIENTES_DB_NOMBRE, PENDIENTES_DB_VERSION);
+    peticion.onupgradeneeded = () => {
+      const db = peticion.result;
+      if (!db.objectStoreNames.contains(PENDIENTES_STORE)) {
+        db.createObjectStore(PENDIENTES_STORE, { keyPath: "id", autoIncrement: true });
+      }
+    };
+    peticion.onsuccess = () => resolve(peticion.result);
+    peticion.onerror = () => reject(peticion.error);
+  });
+}
+
+function entradasDesdeFormData(formData) {
+  const entradas = [];
+  for (const [nombre, valor] of formData.entries()) {
+    if (valor instanceof File) {
+      entradas.push({ nombre, esArchivo: true, archivo: valor });
+    } else {
+      entradas.push({ nombre, esArchivo: false, valor: String(valor) });
+    }
+  }
+  return entradas;
+}
+
+function formDataDesdeEntradas(entradas) {
+  const formData = new FormData();
+  entradas.forEach((entrada) => {
+    if (entrada.esArchivo) {
+      formData.append(entrada.nombre, entrada.archivo, entrada.archivo.name);
+    } else {
+      formData.append(entrada.nombre, entrada.valor);
+    }
+  });
+  return formData;
+}
+
+async function guardarInformePendiente(formData, resumen) {
+  const db = await abrirPendientesDB();
+  const registro = {
+    creado: Date.now(),
+    resumen,
+    entradas: entradasDesdeFormData(formData),
+    estado: "pendiente",
+  };
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDIENTES_STORE, "readwrite");
+    tx.objectStore(PENDIENTES_STORE).add(registro);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function listarInformesPendientes() {
+  const db = await abrirPendientesDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDIENTES_STORE, "readonly");
+    const peticion = tx.objectStore(PENDIENTES_STORE).getAll();
+    peticion.onsuccess = () => resolve(peticion.result || []);
+    peticion.onerror = () => reject(peticion.error);
+  });
+}
+
+async function actualizarInformePendiente(id, cambios) {
+  const db = await abrirPendientesDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDIENTES_STORE, "readwrite");
+    const almacen = tx.objectStore(PENDIENTES_STORE);
+    const peticion = almacen.get(id);
+    peticion.onsuccess = () => {
+      const registro = peticion.result;
+      if (registro) almacen.put(Object.assign(registro, cambios));
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function eliminarInformePendiente(id) {
+  const db = await abrirPendientesDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PENDIENTES_STORE, "readwrite");
+    tx.objectStore(PENDIENTES_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function actualizarPanelPendientes() {
+  const panel = document.getElementById("pendientes-panel");
+  if (!panel) return;
+
+  let registros;
+  try {
+    registros = await listarInformesPendientes();
+  } catch (err) {
+    panel.style.display = "none";
+    return;
+  }
+
+  if (!registros || registros.length === 0) {
+    panel.style.display = "none";
+    panel.innerHTML = "";
+    return;
+  }
+
+  registros.sort((a, b) => a.creado - b.creado);
+  const sinEnviar = registros.filter((r) => r.estado === "pendiente").length;
+
+  const filas = registros
+    .map((registro) => {
+      const fecha = new Date(registro.creado).toLocaleString("es-CL");
+      if (registro.estado === "enviado") {
+        return `
+          <div class="pendiente-item">
+            <div class="pendiente-info">
+              <strong>✅ ${registro.resumen}</strong>
+              <span class="correo-chico">Enviado automáticamente (${fecha})</span>
+            </div>
+            <button type="button" class="btn-pendiente-compartir" data-id="${registro.id}">Compartir</button>
+            <button type="button" class="btn-pendiente-descartar" data-id="${registro.id}">✕</button>
+          </div>`;
+      }
+      if (registro.estado === "error") {
+        return `
+          <div class="pendiente-item">
+            <div class="pendiente-info">
+              <strong>⚠️ ${registro.resumen}</strong>
+              <span class="correo-chico">No se pudo generar: ${registro.mensajeError || "error desconocido"}</span>
+            </div>
+            <button type="button" class="btn-pendiente-descartar" data-id="${registro.id}">✕</button>
+          </div>`;
+      }
+      return `
+        <div class="pendiente-item">
+          <div class="pendiente-info">
+            <strong>📥 ${registro.resumen}</strong>
+            <span class="correo-chico">Esperando señal para enviar (guardado ${fecha})</span>
+          </div>
+          <button type="button" class="btn-pendiente-descartar" data-id="${registro.id}">✕</button>
+        </div>`;
+    })
+    .join("");
+
+  panel.innerHTML = `
+    <h2>📥 Informes pendientes${sinEnviar > 0 ? ` (${sinEnviar} sin enviar)` : ""}</h2>
+    <p class="hint">Se guardaron en este celular porque no había conexión al generarlos. Se mandan solos apenas haya señal; no hace falta volver a sacar las fotos.</p>
+    ${filas}
+    <button type="button" class="btn-agregar-foto" id="btn-reintentar-pendientes" style="margin-top:10px;">🔄 Reintentar ahora</button>
+  `;
+  panel.style.display = "block";
+
+  panel.querySelectorAll(".btn-pendiente-descartar").forEach((boton) => {
+    boton.addEventListener("click", async () => {
+      await eliminarInformePendiente(Number(boton.dataset.id));
+      actualizarPanelPendientes();
+    });
+  });
+
+  panel.querySelectorAll(".btn-pendiente-compartir").forEach((boton) => {
+    boton.addEventListener("click", async () => {
+      const id = Number(boton.dataset.id);
+      const registrosActuales = await listarInformesPendientes();
+      const registro = registrosActuales.find((r) => r.id === id);
+      if (!registro || !registro.pdfBlob) return;
+      const nombre = registro.nombrePdf || "Informe_Auditoria.pdf";
+      const archivoPdf = new File([registro.pdfBlob], nombre, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [archivoPdf] })) {
+        try {
+          await navigator.share({ files: [archivoPdf], title: "Informe de Auditoría" });
+        } catch (err) {
+          // El técnico cerró el menú de compartir sin elegir nada: no hace falta avisar nada.
+        }
+      } else {
+        descargarComoArchivo(registro.pdfBlob, nombre);
+      }
+    });
+  });
+
+  const btnReintentar = document.getElementById("btn-reintentar-pendientes");
+  if (btnReintentar) {
+    btnReintentar.addEventListener("click", () => reintentarPendientes());
+  }
+}
+
+let reintentandoPendientes = false;
+
+async function reintentarPendientes() {
+  if (reintentandoPendientes) return;
+  reintentandoPendientes = true;
+
+  try {
+    let registros;
+    try {
+      registros = await listarInformesPendientes();
+    } catch (err) {
+      return; // IndexedDB no disponible en este navegador: no hay nada que reintentar.
+    }
+
+    const pendientes = registros.filter((r) => r.estado === "pendiente");
+    if (pendientes.length === 0) return;
+
+    let enviadosAhora = 0;
+
+    for (const registro of pendientes) {
+      try {
+        const formData = formDataDesdeEntradas(registro.entradas);
+        const resultado = await enviarAlServidor(formData);
+        await actualizarInformePendiente(registro.id, {
+          estado: "enviado",
+          pdfBlob: resultado.blob,
+          nombrePdf: resultado.nombreArchivo,
+          emailEnviado: resultado.emailEnviado,
+          emailDestino: resultado.emailDestino,
+        });
+        enviadosAhora += 1;
+      } catch (err) {
+        if (err && err.esErrorDeRed) {
+          // Todavía sin señal: se deja pendiente y se prueba de nuevo más
+          // adelante (no tiene sentido seguir probando los demás ahora).
+          break;
+        }
+        // Error de validación real (muy poco probable, porque ya se había
+        // validado antes de guardarlo como pendiente): se deja a la vista
+        // para que el técnico decida, sin reintentarlo en loop para siempre.
+        await actualizarInformePendiente(registro.id, { estado: "error", mensajeError: err.message });
+      }
+    }
+
+    if (enviadosAhora > 0) {
+      mostrarEstadoEnvio(
+        `✅ Se ${enviadosAhora === 1 ? "envió" : "enviaron"} automáticamente ${enviadosAhora} informe${enviadosAhora === 1 ? "" : "s"} que estaba${enviadosAhora === 1 ? "" : "n"} pendiente${enviadosAhora === 1 ? "" : "s"} por falta de señal.`,
+        "success"
+      );
+    }
+
+    actualizarPanelPendientes();
+  } finally {
+    reintentandoPendientes = false;
+  }
+}
+
+function inicializarPendientes() {
+  actualizarPanelPendientes();
+  reintentarPendientes();
+
+  window.addEventListener("online", () => reintentarPendientes());
+
+  // Respaldo del evento "online", que en celulares no siempre se dispara de
+  // forma confiable: mientras la app queda abierta, reintenta cada 45s.
+  setInterval(() => reintentarPendientes(), 45000);
 }
 
 // --- Configuración guardada del técnico/empresa (una sola vez por celular) -
@@ -526,6 +864,47 @@ function inicializarConfig() {
   }
 }
 
+// --- Ubicación GPS automática (opcional) ------------------------------------
+// Apenas se abre el formulario, la app intenta obtener la ubicación del
+// celular sola (sin que el técnico tenga que hacer nada) y la deja lista en
+// los campos ocultos ubicacion_lat/ubicacion_lng para que viaje junto con el
+// resto del informe. Es "mejor esfuerzo": si no hay señal GPS, el técnico
+// todavía no le dio permiso a la app, o el navegador no lo soporta, el
+// informe se genera y se envía igual, simplemente sin esos datos. Nunca
+// frena ni bloquea el botón de generar el PDF.
+function inicializarUbicacion() {
+  const estadoEl = document.getElementById("ubicacion-estado");
+  const inputLat = document.getElementById("ubicacion_lat");
+  const inputLng = document.getElementById("ubicacion_lng");
+
+  if (!navigator.geolocation) {
+    if (estadoEl) estadoEl.textContent = "📍 Este navegador no permite obtener la ubicación automáticamente. El informe se puede generar igual, sin ubicación.";
+    return;
+  }
+
+  if (estadoEl) estadoEl.textContent = "📍 Buscando tu ubicación para incluirla en el informe…";
+
+  navigator.geolocation.getCurrentPosition(
+    (posicion) => {
+      if (inputLat) inputLat.value = posicion.coords.latitude;
+      if (inputLng) inputLng.value = posicion.coords.longitude;
+      if (estadoEl) estadoEl.textContent = "📍 Ubicación capturada: se va a incluir en el informe.";
+    },
+    (error) => {
+      let motivo = "sin señal o permiso denegado";
+      if (error && error.code === error.PERMISSION_DENIED) motivo = "no le diste permiso de ubicación a la app";
+      else if (error && error.code === error.TIMEOUT) motivo = "tardó demasiado en responder (poca señal GPS)";
+      else if (error && error.code === error.POSITION_UNAVAILABLE) motivo = "no hay señal GPS disponible acá";
+
+      if (estadoEl) {
+        estadoEl.textContent =
+          `📍 No se pudo obtener la ubicación automáticamente (${motivo}). El informe se puede generar igual, sin ubicación.`;
+      }
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+  );
+}
+
 // --- Validación de RUT chileno --------------------------------------------
 
 function limpiarRut(rut) {
@@ -561,6 +940,8 @@ document.addEventListener("DOMContentLoaded", () => {
   inicializarRegionComuna();
   inicializarFotos();
   inicializarConfig();
+  inicializarUbicacion();
+  inicializarPendientes();
 
   const btnCancelar = document.getElementById("camera-cancel");
   const btnCapturar = document.getElementById("camera-capture");
