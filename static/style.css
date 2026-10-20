@@ -381,3 +381,55 @@ select:disabled {
   color: #1f6feb;
   font-size: 1.1rem;
 }
+
+#pendientes-panel h2 {
+  margin: 0 0 6px 0;
+  font-size: 1rem;
+  color: #a3242c;
+}
+
+.pendiente-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #eee;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.pendiente-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pendiente-info strong {
+  font-size: 0.9rem;
+  overflow-wrap: break-word;
+}
+
+.btn-pendiente-compartir {
+  background: #1f6feb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-pendiente-descartar {
+  background: none;
+  border: 1px solid #d7dbe0;
+  color: #777;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
